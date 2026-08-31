@@ -16,14 +16,13 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     ## dont forget to add relationships
-    group = relationship("Group", back_populates="user", cascade="all, delete")
-    group_member = relationship("GroupMember", back_populates="user", cascade="all, delete")
-    goalcompletion = relationship("GoalCompletion", back_populates="user", cascade="all, delete")
-    quiz = relationship("Quiz", back_populates="user", cascade="all, delete")
-    streak = relationship("Streak", back_populates="user", cascade="all, delete")
-    point_transaction = relationship("PointTransaction", back_populates="user", cascade="all, delete")
-    resource = relationship("Resource", back_populates="user", cascade="all, delete")
-
+    group = relationship("Group", back_populates="creator", foreign_keys="[Group.created_by]", cascade="all, delete-orphan")
+    group_member = relationship("GroupMember", back_populates="user", cascade="all, delete-orphan")
+    goalcompletion = relationship("GoalCompletion", back_populates="user", cascade="all, delete-orphan")
+    quiz = relationship("Quiz", back_populates="user", cascade="all, delete-orphan")
+    streak = relationship("Streak", back_populates="user", cascade="all, delete-orphan")
+    point_transaction = relationship("PointTransaction", back_populates="user", cascade="all, delete-orphan")
+    resource = relationship("Resource", back_populates="user", cascade="all, delete-orphan")
 
 class Group(Base):
     __tablename__ = "groups"
@@ -35,12 +34,12 @@ class Group(Base):
     created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
-    user = relationship("User", back_populates="group")
-    group_member = relationship("GroupMember", back_populates="group", cascade="all, delete")
-    study_goal = relationship("StudyGoal", back_populates="group", cascade="all, delete")
-    streak = relationship("Streak", back_populates="group", cascade="all, delete")
-    resource = relationship("Resource", back_populates="group", cascade="all, delete")
-    point_transaction = relationship("PointTransaction", back_populates="group", cascade="all,delete")
+    creator = relationship("User", back_populates="group", foreign_keys=[created_by])
+    group_member = relationship("GroupMember", back_populates="group", cascade="all, delete-orphan")
+    study_goal = relationship("StudyGoal", back_populates="group", cascade="all, delete-orphan")
+    streak = relationship("Streak", back_populates="group", cascade="all, delete-orphan")
+    resource = relationship("Resource", back_populates="group", cascade="all, delete-orphan")
+    point_transaction = relationship("PointTransaction", back_populates="group", cascade="all, delete-orphan")
 
 
     
@@ -74,8 +73,9 @@ class StudyGoal(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
 
     group = relationship("Group", back_populates="study_goal")
-    goalcompletion = relationship("GoalCompletion", back_populates="study_goal", cascade="all, delete")
-    quiz = relationship("Quiz", back_populates="study_goal",cascade="all, delete")
+    creator = relationship("User", foreign_keys=[created_by])
+    goalcompletion = relationship("GoalCompletion", back_populates="study_goal", cascade="all, delete-orphan")
+    quiz = relationship("Quiz", back_populates="study_goal", cascade="all, delete-orphan")
 
 
 class GoalCompletion(Base):

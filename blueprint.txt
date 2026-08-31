@@ -99,3 +99,65 @@ Delete Group → delete GroupMember, StudyGoal, Resource,
 Delete StudyGoal → delete GoalCompletion, Quiz
 Delete User → delete GroupMember, Quiz, GoalCompletion,
               Streak, PointTransaction
+
+
+
+
+
+
+AUTH:
+UserCreate     → username, email, password
+UserResponse   → id, username, email, created_at
+TokenResponse  → access_token, token_type
+
+GROUPS:
+GroupCreate    → name, subject, description
+GroupResponse  → id, name, subject, description, invite_code,
+                 created_by, created_at
+GroupUpdate    → name, description (both optional)
+
+GROUP MEMBERS:
+GroupMemberResponse → id, group_id, user_id, role, joined_at
+JoinGroupRequest    → invite_code
+
+STUDY GOALS:
+GoalCreate     → title, description, topic_content, 
+                 week_number, day_number, deadline
+GoalResponse   → id, group_id, title, description, 
+                 topic_content, week_number, day_number,
+                 deadline, created_by, created_at
+GoalUpdate     → title, description, topic_content,
+                 deadline (all optional)
+
+GOAL COMPLETION:
+GoalCompletionResponse → id, goal_id, user_id, completed_at
+
+QUIZ:
+QuizResponse      → id, goal_id, user_id, questions, 
+                    answers, score, feedback, 
+                    created_at, graded_at
+SubmitAnswers     → answers (list of dicts)
+
+STREAK:
+StreakResponse    → id, user_id, group_id, current_streak,
+                    longest_streak, last_active_date, updated_at
+
+POINTS:
+PointTransactionResponse → id, user_id, group_id, amount,
+                           reason, created_at
+
+LEADERBOARD:
+LeaderboardEntry  → user_id, username, total_points,
+                    current_streak, quizzes_completed
+LeaderboardResponse → group_id, week_number, entries: list[LeaderboardEntry]
+
+RESOURCES:
+ResourceResponse  → id, group_id, uploaded_by, title,
+                    description, file_url, file_type, created_at
+
+DASHBOARD:
+DashboardResponse → groups: list[GroupResponse],
+                    pending_goals: list[GoalResponse],
+                    upcoming_deadlines: list[GoalResponse],
+                    total_points: int,
+                    current_streak: int
