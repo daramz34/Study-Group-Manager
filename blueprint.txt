@@ -1,0 +1,101 @@
+User
+├── id
+├── username (unique)
+├── email (unique)
+├── hashed_password
+├── created_at
+
+Group
+├── id
+├── name
+├── subject (e.g. "MAT201 - Linear Algebra")
+├── description
+├── invite_code (unique, auto-generated)
+├── created_by (FK → User)
+├── created_at
+
+GroupMember
+├── id
+├── group_id (FK → Group)
+├── user_id (FK → User)
+├── role (enum: admin, member)
+├── joined_at
+
+StudyGoal
+├── id
+├── group_id (FK → Group)
+├── title
+├── description
+├── topic_content (Text — what to study, used by Gemini)
+├── week_number (int)
+├── day_number (int, optional)
+├── deadline (Date)
+├── created_by (FK → User)
+├── created_at
+
+GoalCompletion
+├── id
+├── goal_id (FK → StudyGoal)
+├── user_id (FK → User)
+├── completed_at
+
+Quiz
+├── id
+├── goal_id (FK → StudyGoal)
+├── user_id (FK → User)
+├── questions (Text — JSON string from Gemini)
+├── answers (Text — JSON string from user)
+├── score (Float, nullable — filled after grading)
+├── feedback (Text — JSON string from Gemini)
+├── created_at
+├── graded_at (DateTime, nullable)
+
+Streak
+├── id
+├── user_id (FK → User)
+├── group_id (FK → Group)
+├── current_streak (int, default 0)
+├── longest_streak (int, default 0)
+├── last_active_date (Date, nullable)
+├── updated_at
+
+PointTransaction
+├── id
+├── user_id (FK → User)
+├── group_id (FK → Group)
+├── amount (int — can be negative)
+├── reason (String — e.g. "quiz_score_9", "weekly_bonus")
+├── created_at
+
+Resource
+├── id
+├── group_id (FK → Group)
+├── uploaded_by (FK → User)
+├── title
+├── description (nullable)
+├── file_url (String — Cloudinary URL)
+├── file_type (String — pdf, image, doc)
+├── created_at
+
+
+User → Group (created_by) — one user creates many groups
+User → GroupMember — one user belongs to many groups
+User → Quiz — one user takes many quizzes
+User → PointTransaction — one user has many point transactions
+User → Streak — one user has many streaks (one per group)
+
+Group → GroupMember — one group has many members
+Group → StudyGoal — one group has many goals
+Group → Resource — one group has many resources
+Group → Streak — one group has many member streaks
+Group → PointTransaction — one group has many point transactions
+
+StudyGoal → GoalCompletion — one goal completed by many users
+StudyGoal → Quiz — one goal has many quiz attempts (one per user)
+
+
+Delete Group → delete GroupMember, StudyGoal, Resource, 
+               Streak, PointTransaction
+Delete StudyGoal → delete GoalCompletion, Quiz
+Delete User → delete GroupMember, Quiz, GoalCompletion,
+              Streak, PointTransaction
