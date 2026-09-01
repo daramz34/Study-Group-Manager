@@ -161,3 +161,118 @@ DashboardResponse → groups: list[GroupResponse],
                     upcoming_deadlines: list[GoalResponse],
                     total_points: int,
                     current_streak: int
+
+
+
+
+USER:
+get_user_by_username(db, username)
+get_user_by_email(db, email)
+create_user(db, user: UserCreate)
+authenticate_user(db, username, password)
+
+GROUPS:
+create_group(db, group: GroupCreate, current_user) 
+    → generate invite_code
+    → create group
+    → auto-add creator as admin in GroupMember
+    → create Streak record for creator
+get_my_groups(db, current_user)
+get_group_by_id(db, group_id)
+update_group(db, group_id, update: GroupUpdate, current_user)
+delete_group(db, group_id, current_user)
+join_group(db, invite_code, current_user)
+    → find group by invite_code
+    → check not already member
+    → add as GroupMember with role=member
+    → create Streak record
+leave_group(db, group_id, current_user)
+get_group_members(db, group_id)
+
+
+GOALS (admin only for create/update/delete):
+create_goal(db, group_id, goal: GoalCreate, current_user)
+    → check current_user is admin of group
+get_group_goals(db, group_id, week_number=None)
+get_goal_by_id(db, goal_id)
+update_goal(db, goal_id, update: GoalUpdate, current_user)
+delete_goal(db, goal_id, current_user)
+
+QUIZ:
+start_quiz(db, goal_id, current_user)
+    → check goal exists
+    → check no existing quiz for this user+goal today
+    → call gemini to generate questions
+    → save Quiz with questions, no answers yet
+    → return quiz
+submit_quiz(db, quiz_id, answers: list[str], current_user)
+    → get quiz
+    → check belongs to current_user
+    → check not already graded
+    → call gemini to grade answers
+    → save answers, score, feedback, graded_at
+    → award points based on score
+    → update streak
+    → create GoalCompletion if score >= 5
+    → return graded quiz
+
+POINTS:
+add_points(db, user_id, group_id, amount, reason)
+    → create PointTransaction
+get_total_points(db, user_id, group_id)
+    → sum all PointTransaction.amount for user in group
+
+STREAK:
+get_or_create_streak(db, user_id, group_id)
+update_streak(db, user_id, group_id, passed: bool)
+    → passed=True (score>=5): streak+1, update last_active
+    → passed=False: streak resets to 0
+
+LEADERBOARD:
+get_group_leaderboard(db, group_id, week_number=None)
+    → for each member get total_points, streak, quizzes_completed
+    → sort by total_points descending
+    → add rank number
+    → return LeaderboardResponse
+
+RESOURCES:
+upload_resource(db, group_id, resource: ResourceCreate, current_user)
+get_group_resources(db, group_id)
+delete_resource(db, resource_id, current_user)
+
+DASHBOARD:
+get_dashboard(db, current_user)
+    → get all groups user is member of
+    → get pending goals (not yet completed by user)
+    → get upcoming deadlines (next 7 days)
+    → get total points across all groups
+    → get current streak across all groups
+
+USER STATS:
+get_user_stats(db, user_id, group_id)
+    → total_points in group
+    → current_streak in group
+    → longest_streak in group
+    → quizzes_taken in group
+    → avg_score across quizzes
+    → rank in group leaderboard
+    → goals_completed in group
+
+
+services/gemini.py:
+
+generate_quiz_questions(topic_content: str) -> list[dict]
+    prompt → "generate 5 questions based on this topic"
+    returns → [{"id":1, "type":"factual", "question":"..."}]
+
+grade_quiz_answers(topic_content, questions, answers) -> dict
+    prompt → "grade these answers against this topic"
+    returns → {
+        "results": [{"question_id":1, "score":2, "feedback":"..."}],
+        "total_score": 8,
+        "summary": "Strong on recall..."
+    }
+
+generate_weekly_digest(group_name, member_stats) -> str
+    prompt → "summarize this group's weekly activity"
+    returns → plain text summary for email
