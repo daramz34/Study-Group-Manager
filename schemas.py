@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
 from typing import Optional
 from datetime import datetime, date
-from enums import GroupRole
+from enums import GroupRole, FileType
 
 
 
@@ -19,13 +19,16 @@ class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class UserStatsResponse(BaseModel):
+    user_id: int
+    group_id: int
     total_points: int
     current_streak: int
     longest_streak: int
     quizzes_taken: int
     avg_score: float
-    rank_in_group: int
     goals_completed: int
+    rank: int
+
     model_config = ConfigDict(from_attributes=True)
 
 class TokenResponse(BaseModel):
@@ -183,6 +186,11 @@ class LeaderboardResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 # resources
+class ResourceCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = None
+    file_url : str
+    file_type: FileType
 
 class ResourceResponse(BaseModel):
     id: int

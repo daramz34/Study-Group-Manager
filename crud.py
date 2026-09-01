@@ -1,9 +1,10 @@
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
 from models import (User, GroupMember, Group, 
                     StudyGoal, GoalCompletion, Quiz, Streak, PointTransaction, Resource)
 from enums import GroupRole
-from schemas import (GroupCreate, UserCreate,  GroupCreate, GroupUpdate, 
+from schemas import (GroupCreate,ResourceCreate, UserCreate,  GroupCreate, GroupUpdate, 
                     GoalCreate,GoalUpdate)
 from core.security import verify_password, hashed_password
 from datetime import date, timedelta
@@ -66,8 +67,7 @@ def create_group(db: Session, group: GroupCreate, current_user: User):
 
 def get_my_groups(db:Session, current_user: User):
     groups = db.query(Group).join(GroupMember).filter(GroupMember.user_id == current_user.id).all()
-    if not groups:
-        return None
+    
     return groups
 
 def get_group_by_id(db:Session, group_id:int, current_user: User):
@@ -77,7 +77,7 @@ def get_group_by_id(db:Session, group_id:int, current_user: User):
     return group
 
 def update_group(db:Session, group_id:int, group_update:GroupUpdate, current_user: User):
-    group = db.query(Group).join(GroupMember).filter(Group.id == group_id, GroupMember.user_id == current_user.id, GroupMember.role == GroupRole.ADMIN).first()
+    group = db.query(Group).join(GroupMember).filter(Group.id == group_id, GroupMember.user_id == current_user.id, GroupMember.role.in_([GroupRole.ADMIN, GroupRole.OWNER])).first()
     if not group:
         return None
 
@@ -90,7 +90,7 @@ def update_group(db:Session, group_id:int, group_update:GroupUpdate, current_use
     return group
 
 def delete_group(db:Session, group_id:int, current_user: User):
-    group = db.query(Group).join(GroupMember).filter(Group.id == group_id, GroupMember.user_id == current_user.id, GroupMember.role == GroupRole.ADMIN).first()
+    group = db.query(Group).join(GroupMember).filter(Group.id == group_id, GroupMember.user_id == current_user.id, GroupMember.role.in_([GroupRole.ADMIN, GroupRole.OWNER])).first()
     if not group:
         return None
 
@@ -245,7 +245,7 @@ def create_goal(db: Session, group_id: int, goal: GoalCreate, current_user: User
     db_goal = StudyGoal(**goal.model_dump(),
                         group_id=group_id,
                         created_by=current_user.id)
-    if db_goal.deadline < date.today():
+    if goal.deadline < date.today():
         return None  # Deadline cannot be in the past
     
     db.add(db_goal)
@@ -346,9 +346,9 @@ async def submit_quiz(db: Session, quiz_id: int, answers: list[str], current_use
         Quiz.user_id == current_user.id
     ).first()
     if not quiz:
-        return None,"Quiz not found"
+        return None
     if quiz.graded_at is not None:
-        return None, "Already graded" # Quiz has already been graded
+        return None 
 
     
 
@@ -383,3 +383,264 @@ async def submit_quiz(db: Session, quiz_id: int, answers: list[str], current_use
     db.commit()
     db.refresh(quiz)
     return quiz
+
+
+def add_points(db: Session, user_id: int, group_id: int, amount: int, reason: str):
+    points = PointTransaction(user_id=user_id, group_id=group_id, amount=amount, reason=reason)
+    db.add(points)
+    db.commit()
+    db.refresh(points)
+    return points
+
+def get_total_points(db: Session, user_id: int, group_id: int):
+    total = db.query(PointTransaction).filter(
+        PointTransaction.user_id == user_id,
+        PointTransaction.group_id == group_id
+    ).with_entities(func.sum(PointTransaction.amount)).scalar()
+    return total or 0
+
+
+def get_or_create_streak(db: Session, user_id: int, group_id: int):
+    streak = db.query(Streak).filter(
+        Streak.user_id == user_id,
+        Streak.group_id == group_id
+    ).first()
+    if not streak:
+        streak = Streak(user_id=user_id, group_id=group_id)
+        db.add(streak)
+        db.commit()
+        db.refresh(streak)
+    return streak
+
+def update_streak(db: Session, user_id: int, group_id: int, passed: bool):
+    streak = get_or_create_streak(db, user_id, group_id)
+    today = date.today()
+
+    if streak.last_active_date == today:
+        return streak
+
+    if passed:
+        if streak.last_active_date == today - timedelta(days=1):
+            streak.current_streak += 1
+        else:
+            streak.current_streak = 1
+
+    else:
+        streak.current_streak = 0
+
+
+    if streak.current_streak > streak.longest_streak:
+        streak.longest_streak = streak.current_streak
+
+    streak.last_active_date = today
+    
+    db.commit()
+    db.refresh(streak)
+    return streak
+
+
+def get_group_leaderboard(db: Session, group_id: int, week_number: int = None):
+    members = ( db.query(GroupMember, User.username).join(User, User.id == GroupMember.user_id).filter(GroupMember.group_id == group_id).all() )
+    leaderboard = []
+
+    for member, username in members:
+        user_id = member.user_id
+
+        points_filter = [PointTransaction.user_id == user_id, 
+                         PointTransaction.group_id == group_id]
+
+        if week_number is not None:
+            points_filter.append(PointTransaction.created_at >= get_week_start(week_number))
+
+            points_filter.append(PointTransaction.created_at < get_week_start(week_number + 1))
+
+        total_points = db.query(func.coalesce(func.sum(PointTransaction.amount), 0)).filter(*points_filter).scalar()
+
+        quiz_filter = [Quiz.user_id == user_id, StudyGoal.group_id == group_id, Quiz.graded_at.isnot(None)]
+
+        if week_number is not None:
+            quiz_filter.append(StudyGoal.week_number == week_number)
+
+        quizzes_completed = db.query(func.count(Quiz.id)).join(StudyGoal, StudyGoal.id == Quiz.goal_id).filter(*quiz_filter).scalar()
+
+        streak = db.query(Streak).filter(Streak.user_id == user_id, Streak.group_id == group_id).first()
+
+        current_streak = streak.current_streak if streak else 0
+
+        avg_filter = [Quiz.user_id == user_id, 
+                      StudyGoal.group_id == group_id,
+                      Quiz.score.isnot(None)]
+
+        if week_number is not None:
+            avg_filter.append(StudyGoal.week_number == week_number)
+        
+        avg_score = db.query(
+            func.coalesce(func.avg(Quiz.score), 0.0)
+        ).join(
+            StudyGoal, Quiz.goal_id == StudyGoal.id
+        ).filter(*avg_filter).scalar()
+        
+        leaderboard.append({
+            "user_id": user_id,
+            "username": username,
+            "total_points": total_points,
+            "current_streak": current_streak,
+            "quizzes_completed": quizzes_completed,
+            "avg_score": round(float(avg_score), 2)
+        })
+
+    leaderboard.sort(key=lambda x: x["total_points"], reverse=True)
+    
+   
+    for i, entry in enumerate(leaderboard, 1):
+        entry["rank"] = i
+    
+    return leaderboard
+
+def get_week_start(db: Session, group_id: int, week_number: int) -> date:
+    group = db.query(Group).filter(Group.id == group_id).first()
+    semester_start = group.created_at.date()
+    return semester_start + timedelta(weeks=week_number - 1)
+
+
+
+
+
+# Resources
+def upload_resource(db: Session, group_id:int, resource: ResourceCreate, current_user: User):
+    db_resource = Resource(group_id=group_id, uploaded_by=current_user.id, title=resource.title,
+                           description=resource.description, file_url=resource.file_url,file_type=resource.file_type.value)
+
+    db.add(db_resource)
+    db.commit()
+    db.refresh(db_resource)
+    return db_resource
+
+
+# dashboard
+
+def get_dashboard(db: Session, current_user: User):
+    today = date.today()
+    next_week = today + timedelta(days=7)
+
+    groups = (
+        db.query(Group).join(GroupMember, GroupMember.group_id == Group.id).filter(GroupMember.user_id == current_user.id).all() )
+
+    group_ids = [g.id for g in groups]
+
+    pending_goals = (
+        db.query(StudyGoal).filter(StudyGoal.group_id.in_(group_ids), StudyGoal.deadline >= today)
+        .except_(
+            db.query(StudyGoal)
+            .join(GoalCompletion, GoalCompletion.goal_id == StudyGoal.id)
+            .filter(GoalCompletion.user_id == current_user.id)
+        )
+        .all()
+    )
+    upcoming_deadlines = (db.query(StudyGoal).filter(StudyGoal.group_id.in_(group_ids),StudyGoal.deadline >= today,
+            StudyGoal.deadline <= next_week
+        )
+        .order_by(StudyGoal.deadline)
+        .all()
+    )
+
+    total_points = db.query(
+        func.coalesce(func.sum(PointTransaction.amount), 0)
+    ).filter(
+        PointTransaction.user_id == current_user.id,
+        PointTransaction.group_id.in_(group_ids)
+    ).scalar()
+
+    streaks = db.query(Streak).filter(
+        Streak.user_id == current_user.id,
+        Streak.group_id.in_(group_ids)
+    ).all()
+
+    current_streak = sum(s.current_streak for s in streaks)
+    longest_streak = max((s.longest_streak for s in streaks), default=0)
+
+    return {
+        "groups": groups,
+        "pending_goals": pending_goals,
+        "upcoming_deadlines": upcoming_deadlines,
+        "total_points": total_points,
+        "current_streak": current_streak,
+        "longest_streak": longest_streak
+    }
+
+
+def get_user_stats(db: Session, user_id: int, group_id: int):
+    
+    total_points = db.query(
+        func.coalesce(func.sum(PointTransaction.amount), 0)
+    ).filter(
+        PointTransaction.user_id == user_id,
+        PointTransaction.group_id == group_id
+    ).scalar()
+
+    
+    streak = db.query(Streak).filter(
+        Streak.user_id == user_id,
+        Streak.group_id == group_id
+    ).first()
+
+    current_streak = streak.current_streak if streak else 0
+    longest_streak = streak.longest_streak if streak else 0
+
+    
+    quizzes_taken = db.query(
+        func.count(Quiz.id)
+    ).join(
+        StudyGoal, Quiz.goal_id == StudyGoal.id
+    ).filter(
+        Quiz.user_id == user_id,
+        StudyGoal.group_id == group_id,
+        Quiz.graded_at.isnot(None)  # Only graded quizzes
+    ).scalar()
+
+   
+    avg_score = db.query(
+        func.coalesce(func.avg(Quiz.score), 0.0)
+    ).join(
+        StudyGoal, Quiz.goal_id == StudyGoal.id
+    ).filter(
+        Quiz.user_id == user_id,
+        StudyGoal.group_id == group_id,
+        Quiz.score.isnot(None)
+    ).scalar()
+
+    
+    goals_completed = db.query(
+        func.count(GoalCompletion.id)
+    ).join(
+        StudyGoal, GoalCompletion.goal_id == StudyGoal.id
+    ).filter(
+        GoalCompletion.user_id == user_id,
+        StudyGoal.group_id == group_id
+    ).scalar()
+
+    
+    members_with_more_points = db.query(
+        func.count(PointTransaction.user_id)
+    ).filter(
+        PointTransaction.group_id == group_id,
+        PointTransaction.amount > 0
+    ).group_by(
+        PointTransaction.user_id
+    ).having(
+        func.sum(PointTransaction.amount) > total_points
+    ).count()
+
+    rank = members_with_more_points + 1
+
+    return {
+        "user_id": user_id,
+        "group_id": group_id,
+        "total_points": total_points,
+        "current_streak": current_streak,
+        "longest_streak": longest_streak,
+        "quizzes_taken": quizzes_taken,
+        "avg_score": round(float(avg_score), 2),
+        "goals_completed": goals_completed,
+        "rank": rank
+    }
