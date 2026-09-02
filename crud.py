@@ -1,6 +1,6 @@
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from fastapi import HTTPException
+from fastapi import UploadFile
 from models import (User, GroupMember, Group, 
                     StudyGoal, GoalCompletion, Quiz, Streak, PointTransaction, Resource)
 from enums import GroupRole
@@ -12,6 +12,7 @@ from models import utcnow
 from utils import generate_invite_code
 from services.gemini import generate_quiz_questions, grade_quiz_answers
 import json
+from services.cloudinary import upload_file
 from services.cache import get_cached, set_cache, invalidate_cache
 
 def get_user_by_username(db: Session, username: str):
@@ -526,14 +527,70 @@ def get_week_start(db: Session, group_id: int, week_number: int) -> date:
 
 # Resources
 def upload_resource(db: Session, group_id:int, resource: ResourceCreate, current_user: User):
-    db_resource = Resource(group_id=group_id, uploaded_by=current_user.id, title=resource.title,
-                           description=resource.description, file_url=resource.file_url,file_type=resource.file_type.value)
+    
+    member = db.query(GroupMember).filter(
+            GroupMember.group_id == group_id,
+            GroupMember.user_id == current_user.id
+        ).first()
+    if not member:
+            return None
 
+    db_resource = Resource(
+        group_id=group_id,
+        uploaded_by=current_user.id,
+        title=resource.title,
+        description=resource.description,
+        file_url=resource.file_url,
+        file_type=resource.file_type.value
+    )
     db.add(db_resource)
     db.commit()
     db.refresh(db_resource)
     return db_resource
 
+def get_group_resources(db: Session, group_id: int, current_user: User):
+    # Check membership
+    member = db.query(GroupMember).filter(
+        GroupMember.group_id == group_id,
+        GroupMember.user_id == current_user.id
+    ).first()
+    if not member:
+        return None
+
+    resources = db.query(Resource).filter(Resource.group_id == group_id).all()
+    return resources
+
+
+def get_resource_by_id(db: Session, resource_id: int, current_user: User):
+    resource = db.query(Resource).join(
+        GroupMember, Resource.group_id == GroupMember.group_id
+    ).filter(
+        Resource.id == resource_id,
+        GroupMember.user_id == current_user.id
+    ).first()
+    
+    return resource  
+
+
+def delete_resource(db: Session, resource_id: int, current_user: User):
+    resource = db.query(Resource).filter(Resource.id == resource_id).first()
+    if not resource:
+        return None
+
+    # Check if user is uploader
+    if resource.uploaded_by == current_user.id:
+        db.delete(resource)
+        db.commit()
+        return resource
+
+    
+    member = db.query(GroupMember).filter(
+        GroupMember.group_id == resource.group_id,
+        GroupMember.user_id == current_user.id,
+        GroupMember.role.in_([GroupRole.OWNER, GroupRole.ADMIN])
+    ).first()
+    if not member:
+        return None
 
 # dashboard
 
@@ -587,8 +644,17 @@ def get_dashboard(db: Session, current_user: User):
     }
 
 
-def get_user_stats(db: Session, user_id: int, group_id: int):
-    
+def get_user_stats(db: Session, user_id: int, group_id: int, current_user:User):
+
+    if current_user:
+        member = db.query(GroupMember).filter(
+            GroupMember.group_id == group_id,
+            GroupMember.user_id == current_user.id
+        ).first()
+        if not member:
+            return None
+
+            
     total_points = db.query(
         func.coalesce(func.sum(PointTransaction.amount), 0)
     ).filter(

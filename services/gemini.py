@@ -16,7 +16,6 @@ def parse_json_response(response_text: str):
     return json.loads(text)
 
 
-
 # generate quiz questions
 
 async def generate_quiz_questions(topic_content: str) -> list[dict]:

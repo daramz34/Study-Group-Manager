@@ -16,9 +16,10 @@ router = APIRouter(prefix="/quiz", tags=["QUIZZES"])
 
 
 
-@router.post("/goals/{goal_id}/start-quiz", response_class=QuizResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/goals/{goal_id}/start-quiz", response_model=QuizResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("5/day")
-async def start_quiz_endpoint(request: Request, goal_id: int, db:Session = Depends(get_current_user), current_user:User = Depends(get_current_user)):
+async def start_quiz_endpoint(request: Request, goal_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+
     db_quiz = await start_quiz(db, goal_id, current_user)
 
     if not db_quiz:
@@ -38,12 +39,12 @@ async def submit_quiz_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    db_quiz, error = await submit_quiz(db, quiz_id, body.answers, current_user)
+    db_quiz = await submit_quiz(db, quiz_id, body.answers, current_user)
     
-    if error:
+    if not db_quiz:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=error
+            detail="Quiz not found or already graded"
         )
     return db_quiz
 

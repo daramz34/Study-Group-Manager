@@ -17,7 +17,7 @@ router = APIRouter(prefix="/goals", tags=["GOALS"])
 
 @router.post("/group/{group_id}", response_model=GoalResponse, status_code=status.HTTP_201_CREATED)
 @limiter.limit("20/day")
-def create_goal_endpoint(group_id:int, goal: GoalCreate, db:Session=Depends(get_db), current_user:User=Depends(get_current_user)):
+def create_goal_endpoint(request: Request, group_id:int, goal: GoalCreate, db:Session=Depends(get_db), current_user:User=Depends(get_current_user)):
     db_goal = create_goal(db, group_id, goal, current_user)
 
     if not db_goal:
@@ -33,7 +33,7 @@ def create_goal_endpoint(group_id:int, goal: GoalCreate, db:Session=Depends(get_
 @router.get("/group/{group_id}", response_model=list[GoalResponse], status_code=status.HTTP_200_OK)
 def list_goals_endpoint(group_id: int, db:Session=Depends(get_db), current_user: User = Depends(get_current_user)):
     db_goals = get_group_goals(db, group_id, current_user)
-    if not db_goals:
+    if  db_goals is None:
         raise HTTPException(
             status_code=403,
             detail="You are not a group member"

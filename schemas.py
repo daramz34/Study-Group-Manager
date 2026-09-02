@@ -214,6 +214,7 @@ class DashboardResponse(BaseModel):
     upcoming_deadlines: list[GoalResponse]
     total_points: int
     current_streak: int
+    longest_streak: int
     
     model_config = ConfigDict(from_attributes=True)
 

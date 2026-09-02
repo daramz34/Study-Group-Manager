@@ -127,7 +127,7 @@ def transfer_ownership_endpoint(group_id:int, body: PostionRequest, db:Session=D
     return db_transfer
 
 
-@router.delete("/{group_id}/leave_group", status_code=203)
+@router.delete("/{group_id}/leave_group", status_code=204)
 def leave_group_endpoint(group_id: int, db: Session=Depends(get_db), current_user: User=Depends(get_current_user)):
     db_leave= leave_group(db, group_id, current_user)
     if not db_leave:
