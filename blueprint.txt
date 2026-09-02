@@ -276,3 +276,47 @@ grade_quiz_answers(topic_content, questions, answers) -> dict
 generate_weekly_digest(group_name, member_stats) -> str
     prompt → "summarize this group's weekly activity"
     returns → plain text summary for email
+
+
+
+
+AUTH:
+POST /auth/register
+POST /auth/login
+
+GROUPS:
+POST   /groups/                    → create group
+GET    /groups/                    → my groups
+GET    /groups/{id}                → group details
+PUT    /groups/{id}                → update group (admin only)
+DELETE /groups/{id}                → delete group (admin only)
+POST   /groups/{id}/join           → join via invite code
+DELETE /groups/{id}/leave          → leave group
+GET    /groups/{id}/members        → list members
+
+GOALS:
+POST   /groups/{id}/goals/         → create goal (admin only)
+GET    /groups/{id}/goals/         → list goals (optional ?week=1)
+GET    /goals/{id}                 → get single goal
+PUT    /goals/{id}                 → update goal (admin only)
+DELETE /goals/{id}                 → delete goal (admin only)
+
+QUIZ:
+POST   /goals/{id}/start-quiz      → generate quiz from Gemini
+POST   /quiz/{id}/submit           → submit answers + get graded
+GET    /quiz/{id}                  → get quiz results
+
+LEADERBOARD:
+GET    /groups/{id}/leaderboard    → group leaderboard
+GET    /leaderboard/public         → top groups globally
+
+STATS:
+GET    /groups/{id}/my-stats       → my stats in this group
+
+RESOURCES:
+POST   /groups/{id}/resources      → upload resource
+GET    /groups/{id}/resources      → list resources
+DELETE /resources/{id}             → delete resource
+
+DASHBOARD:
+GET    /users/me/dashboard         → full dashboard

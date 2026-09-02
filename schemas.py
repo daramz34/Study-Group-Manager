@@ -75,6 +75,8 @@ class GroupMemberResponse(BaseModel):
 class JoinGroupRequest(BaseModel):
     invite_code: str
 
+class PostionRequest(BaseModel):
+    user_id: int
 
 # for study goals
 

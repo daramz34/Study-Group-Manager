@@ -12,6 +12,7 @@ from models import utcnow
 from utils import generate_invite_code
 from services.gemini import generate_quiz_questions, grade_quiz_answers
 import json
+from services.cache import get_cached, set_cache, invalidate_cache
 
 def get_user_by_username(db: Session, username: str):
     return db.query(User).filter(User.username == username).first()
@@ -117,6 +118,7 @@ def join_group(db:Session, invite_code:str, current_user: User):
 
     db.commit()
     db.refresh(db_member)
+    invalidate_cache(f"dashboard:{current_user.id}:*")
     return db_member
 
 
@@ -251,6 +253,7 @@ def create_goal(db: Session, group_id: int, goal: GoalCreate, current_user: User
     db.add(db_goal)
     db.commit()
     db.refresh(db_goal)
+    invalidate_cache(f"goals:{group_id}:*")
     return db_goal
 
 def get_group_goals(db: Session, group_id: int, current_user: User, week_number: int = None, ):
@@ -306,6 +309,7 @@ def delete_goal(db: Session, goal_id: int, current_user: User):
 
     db.delete(goal)
     db.commit()
+    invalidate_cache(f"goals:{goal.group_id}:*")
     return goal
 
 
@@ -337,6 +341,8 @@ async def start_quiz(db: Session, goal_id: int, current_user: User):
     db.add(new_quiz)
     db.commit()
     db.refresh(new_quiz)
+    invalidate_cache(f"leaderboard:{goal.group_id}:*")
+    invalidate_cache(f"dashboard:{current_user.id}:*")
     return new_quiz
 
 
@@ -390,6 +396,8 @@ def add_points(db: Session, user_id: int, group_id: int, amount: int, reason: st
     db.add(points)
     db.commit()
     db.refresh(points)
+    invalidate_cache(f"leaderboard:{group_id}:*")
+    invalidate_cache(f"dashboard:{user_id}:*")
     return points
 
 def get_total_points(db: Session, user_id: int, group_id: int):
@@ -440,6 +448,15 @@ def update_streak(db: Session, user_id: int, group_id: int, passed: bool):
 
 
 def get_group_leaderboard(db: Session, group_id: int, week_number: int = None):
+    cache_key = f"leaderboard:{group_id}:{week_number}"
+
+
+    # check cache first
+    cached = get_cached(cache_key)
+    if cached:
+        return cached
+    
+
     members = ( db.query(GroupMember, User.username).join(User, User.id == GroupMember.user_id).filter(GroupMember.group_id == group_id).all() )
     leaderboard = []
 
@@ -494,7 +511,8 @@ def get_group_leaderboard(db: Session, group_id: int, week_number: int = None):
    
     for i, entry in enumerate(leaderboard, 1):
         entry["rank"] = i
-    
+
+    set_cache(cache_key, leaderboard, ttl_seconds=300)
     return leaderboard
 
 def get_week_start(db: Session, group_id: int, week_number: int) -> date:
