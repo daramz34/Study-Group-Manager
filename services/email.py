@@ -7,17 +7,27 @@ from core.config import settings
 
 def send_email(to: str, subject: str, html_body: str):
     """Send HTML email using SMTP (Gmail)"""
-    msg = MIMEMultipart("alternative")
-    msg["From"] = settings.EMAIL_FROM
-    msg["To"] = to
-    msg["Subject"] = subject
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["From"] = settings.EMAIL_FROM
+        msg["To"] = to
+        msg["Subject"] = subject
 
-    # Attach HTML (not plain text)
-    msg.attach(MIMEText(html_body, "html"))
+        # Attach HTML (not plain text)
+        msg.attach(MIMEText(html_body, "html"))
 
-    with smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT) as server:
-        server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
-        server.send_message(msg)
+        with smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT) as server:
+            server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+            server.send_message(msg)
+
+        print(f"✅ Email sent to {to} — Subject: {subject}")  # ← Add this
+        return True
+        
+    except Exception as e:
+        print(f"❌ Email failed: {e}")  # ← Add this
+        return False
+
+    
 
 
 # ── EMAIL TEMPLATES ──
@@ -26,7 +36,7 @@ BASE_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <style>
+    <style>  
         body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #f4f4f4; margin: 0; padding: 20px; }}
         .container {{ max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
         .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center; }}
@@ -135,3 +145,95 @@ def streak_alert(to: str, username: str, current_streak: int):
 
     html = BASE_TEMPLATE.format(content=content)
     send_email(to, "🔥 Your Streak Was Reset!", html)
+
+
+def owner_created_email(to: str, username: str, group_name: str):
+    """Sent when a user creates a group (auto-owner)"""
+    html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #4CAF50;">🎉 Group Created!</h2>
+        <p>Hey <strong>{username}</strong>,</p>
+        <p>You've successfully created the study group <strong>"{group_name}"</strong>.</p>
+        <p>You're the <strong>Owner</strong> — you can invite members, create goals, and manage everything.</p>
+        <p>Share the invite code with your classmates to get started!</p>
+        <br>
+        <p style="color: #666;">— The StudyGroup Team</p>
+    </div>
+    """
+    send_email(to, f"🎉 You created '{group_name}'", html)
+
+
+def member_joined_email(to: str, username: str, group_name: str):
+    """Sent when a user joins a group"""
+    html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #2196F3;">👋 Welcome to the Group!</h2>
+        <p>Hey <strong>{username}</strong>,</p>
+        <p>You've successfully joined <strong>"{group_name}"</strong>.</p>
+        <p>You're now a <strong>Member</strong>. Check out the goals and start earning points!</p>
+        <br>
+        <p style="color: #666;">— The StudyGroup Team</p>
+    </div>
+    """
+    send_email(to, f"👋 You joined '{group_name}'", html)
+
+
+def admin_promoted_email(to: str, username: str, group_name: str):
+    """Sent when a member is promoted to admin"""
+    html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #FF9800;">⭐ You've Been Promoted!</h2>
+        <p>Hey <strong>{username}</strong>,</p>
+        <p>You've been chosen as an <strong>Admin</strong> for <strong>"{group_name}"</strong>!</p>
+        <p>You can now create, update, and manage study goals for the group.</p>
+        <br>
+        <p style="color: #666;">— The StudyGroup Team</p>
+    </div>
+    """
+    send_email(to, f"⭐ You're now an Admin in '{group_name}'", html)
+
+
+def member_demoted_email(to: str, username: str, group_name: str):
+    """Sent when an admin is demoted to member"""
+    html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #f44336;">📋 Role Updated</h2>
+        <p>Hey <strong>{username}</strong>,</p>
+        <p>Your role in <strong>"{group_name}"</strong> has been changed to <strong>Member</strong>.</p>
+        <p>You can still participate in quizzes, earn points, and join discussions.</p>
+        <br>
+        <p style="color: #666;">— The StudyGroup Team</p>
+    </div>
+    """
+    send_email(to, f"📋 Role change in '{group_name}'", html)
+
+
+def ownership_transferred_email(to: str, username: str, group_name: str):
+    """Sent when ownership is transferred to a new owner"""
+    html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #9C27B0;">👑 You're the New Owner!</h2>
+        <p>Hey <strong>{username}</strong>,</p>
+        <p>Ownership of <strong>"{group_name}"</strong> has been transferred to you!</p>
+        <p>You can now manage members, create goals, and control the group.</p>
+        <br>
+        <p style="color: #666;">— The StudyGroup Team</p>
+    </div>
+    """
+    send_email(to, f"👑 You're now the Owner of '{group_name}'", html)
+
+
+def member_left_group_email(to: str, username: str, group_name: str, left_username: str):
+    """Sent to remaining admins when a member leaves"""
+    html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #607D8B;">👋 Member Left</h2>
+        <p>Hey <strong>{username}</strong>,</p>
+        <p><strong>{left_username}</strong> has left <strong>"{group_name}"</strong>.</p>
+        <p>The group now has one less member. Keep the momentum going!</p>
+        <br>
+        <p style="color: #666;">— The StudyGroup Team</p>
+    </div>
+    """
+    send_email(to, f"👋 {left_username} left '{group_name}'", html)
+

@@ -320,3 +320,16 @@ DELETE /resources/{id}             → delete resource
 
 DASHBOARD:
 GET    /users/me/dashboard         → full dashboard
+
+
+
+
+Step	What to test	Endpoint
+1	Create a goal (owner/admin)	POST /goals/groups/1
+2	Start a quiz (member)	POST /quiz/goals/1/start-quiz
+3	Submit quiz answers	POST /quiz/{quiz_id}/submit
+4	Check points got awarded	Check DB or leaderboard
+5	Check leaderboard	GET /leaderboard/groups/1
+6	Check dashboard	GET /dashboard/users/me
+7	Check user stats	GET /user_stats/groups/1
+8	Upload a resource	POST /resources/groups/1

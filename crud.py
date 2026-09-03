@@ -1,6 +1,6 @@
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from fastapi import UploadFile
+from fastapi import UploadFile, HTTPException
 from models import (User, GroupMember, Group, 
                     StudyGoal, GoalCompletion, Quiz, Streak, PointTransaction, Resource)
 from enums import GroupRole
@@ -10,10 +10,13 @@ from core.security import verify_password, hashed_password
 from datetime import date, timedelta
 from models import utcnow
 from utils import generate_invite_code
-from services.gemini import generate_quiz_questions, grade_quiz_answers
+from services.gemini import generate_quiz_questions, grade_quiz_answers, strip_answers
 import json
+from datetime import date, datetime, timezone
+
 from services.cloudinary import upload_file
 from services.cache import get_cached, set_cache, invalidate_cache
+from services.email import owner_created_email, member_joined_email, admin_promoted_email, member_demoted_email, ownership_transferred_email, member_left_group_email
 
 def get_user_by_username(db: Session, username: str):
     return db.query(User).filter(User.username == username).first()
@@ -65,6 +68,7 @@ def create_group(db: Session, group: GroupCreate, current_user: User):
     
     db.commit()
     db.refresh(db_group)
+    owner_created_email(to=current_user.email, username=current_user.username, group_name=db_group.name)
     return db_group
 
 def get_my_groups(db:Session, current_user: User):
@@ -100,71 +104,122 @@ def delete_group(db:Session, group_id:int, current_user: User):
     db.commit()
     return group
 
-def join_group(db:Session, invite_code:str, current_user: User):
+def join_group(db: Session, invite_code: str, current_user: User):
     group = db.query(Group).filter(Group.invite_code == invite_code).first()
     if not group:
         return None
 
-    existing_member = db.query(GroupMember).filter(GroupMember.group_id == group.id, GroupMember.user_id == current_user.id).first()
+    existing_member = db.query(GroupMember).filter(
+        GroupMember.group_id == group.id,
+        GroupMember.user_id == current_user.id
+    ).first()
     if existing_member:
         return None
 
-    db_member = GroupMember(group_id=group.id,
-                            user_id=current_user.id,
-                            role=GroupRole.MEMBER)
+    db_member = GroupMember(group_id=group.id, user_id=current_user.id, role=GroupRole.MEMBER)
     db.add(db_member)
-
     db_streak = Streak(user_id=current_user.id, group_id=group.id)
     db.add(db_streak)
-
     db.commit()
     db.refresh(db_member)
+
+    member_joined_email(to=current_user.email, username=current_user.username, group_name=group.name)
     invalidate_cache(f"dashboard:{current_user.id}:*")
-    return db_member
+
+    return {
+        "id": db_member.id,
+        "user_id": db_member.user_id,
+        "username": current_user.username,
+        "group_id": db_member.group_id,
+        "role": db_member.role,
+        "joined_at": db_member.joined_at
+    }
 
 
-def leave_group(db:Session, group_id:int, current_user: User):
-    member = db.query(GroupMember).filter(GroupMember.group_id == group_id, GroupMember.user_id == current_user.id).first()
+def leave_group(db: Session, group_id: int, current_user: User):
+    member = db.query(GroupMember).filter(
+        GroupMember.group_id == group_id,
+        GroupMember.user_id == current_user.id
+    ).first()
     if not member:
         return None
 
     if member.role == GroupRole.OWNER:
-        return None  # Owner cannot leave the group without transferring ownership
-    
+        return None
+
     if member.role == GroupRole.ADMIN:
         other_admins = db.query(GroupMember).filter(
             GroupMember.group_id == group_id,
             GroupMember.role == GroupRole.ADMIN,
             GroupMember.user_id != current_user.id
         ).count()
-        
         if other_admins == 0:
             return None
+
+    member_data = {
+        "id": member.id,
+        "user_id": member.user_id,
+        "username": current_user.username,
+        "group_id": member.group_id,
+        "role": member.role,
+        "joined_at": member.joined_at
+    }
+
     db.delete(member)
     db.commit()
-    return member
 
-def get_group_members(db:Session, group_id:int, current_user: User):
-    group = db.query(Group).join(GroupMember).filter(Group.id == group_id, GroupMember.user_id == current_user.id).first()
+    group = db.query(Group).filter(Group.id == group_id).first()
+    remaining = db.query(GroupMember).filter(
+        GroupMember.group_id == group_id,
+        GroupMember.user_id != current_user.id
+    ).all()
+
+    for r in remaining:
+        user = db.query(User).filter(User.id == r.user_id).first()
+        if user and group:
+            member_left_group_email(
+                to=user.email, username=user.username,
+                group_name=group.name, left_username=current_user.username
+            )
+
+    return member_data
+
+
+def get_group_members(db: Session, group_id: int, current_user: User):
+    group = db.query(Group).join(GroupMember).filter(
+        Group.id == group_id, GroupMember.user_id == current_user.id
+    ).first()
     if not group:
         return None
 
-    members = db.query(GroupMember).filter(GroupMember.group_id == group_id).all()
-    
-    return members
-
+    members = (
+        db.query(GroupMember, User.username)
+        .join(User, User.id == GroupMember.user_id)
+        .filter(GroupMember.group_id == group_id)
+        .all()
+    )
+    return [
+        {
+            "id": m.id,
+            "user_id": m.user_id,
+            "username": username,
+            "group_id": m.group_id,
+            "role": m.role,
+            "joined_at": m.joined_at
+        }
+        for m, username in members
+    ]
 
 
 def promote_to_admin(db, group_id, user_id_to_promote, current_user):
-    
     owner = db.query(GroupMember).filter(
         GroupMember.group_id == group_id,
         GroupMember.user_id == current_user.id,
-        GroupMember.role == GroupRole.OWNER).first()
+        GroupMember.role == GroupRole.OWNER
+    ).first()
     if not owner:
         return None
 
-    
     member = db.query(GroupMember).filter(
         GroupMember.group_id == group_id,
         GroupMember.user_id == user_id_to_promote
@@ -172,26 +227,34 @@ def promote_to_admin(db, group_id, user_id_to_promote, current_user):
     if not member:
         return None
 
-   
     member.role = GroupRole.ADMIN
     db.commit()
-    db.refresh(member)
-    return member
+
+    promoted_user = db.query(User).filter(User.id == user_id_to_promote).first()
+    group = db.query(Group).filter(Group.id == group_id).first()
+    if group and promoted_user:
+        admin_promoted_email(to=promoted_user.email, username=promoted_user.username, group_name=group.name)
+
+    return {
+        "id": member.id,
+        "user_id": member.user_id,
+        "username": promoted_user.username if promoted_user else "Unknown",
+        "group_id": member.group_id,
+        "role": member.role,
+        "joined_at": member.joined_at
+    }
 
 
 def demote_to_member(db, group_id, user_id_to_demote, current_user):
-    # Only owner can demote
     owner = db.query(GroupMember).filter(
         GroupMember.group_id == group_id,
         GroupMember.user_id == current_user.id,
-        GroupMember.role == GroupRole.OWNER).first()
+        GroupMember.role == GroupRole.OWNER
+    ).first()
     if not owner:
         return None
 
-    group = db.query(Group).filter(
-        Group.id == group_id,
-        Group.created_by == current_user.id
-    ).first()
+    group = db.query(Group).filter(Group.id == group_id, Group.created_by == current_user.id).first()
     if not group:
         return None
 
@@ -200,18 +263,31 @@ def demote_to_member(db, group_id, user_id_to_demote, current_user):
         GroupMember.user_id == user_id_to_demote
     ).first()
     if not member or member.user_id == current_user.id:
-        return None  # Can't demote yourself
+        return None
 
     member.role = GroupRole.MEMBER
     db.commit()
-    return member
+
+    demoted_user = db.query(User).filter(User.id == user_id_to_demote).first()
+    if demoted_user:
+        member_demoted_email(to=demoted_user.email, username=demoted_user.username, group_name=group.name)
+
+    return {
+        "id": member.id,
+        "user_id": member.user_id,
+        "username": demoted_user.username if demoted_user else "Unknown",
+        "group_id": member.group_id,
+        "role": member.role,
+        "joined_at": member.joined_at
+    }
+
 
 def transfer_ownership(db, group_id, new_owner_id, current_user):
-    # Only current owner can transfer ownership
     current_owner = db.query(GroupMember).filter(
         GroupMember.group_id == group_id,
         GroupMember.user_id == current_user.id,
-        GroupMember.role == GroupRole.OWNER).first()
+        GroupMember.role == GroupRole.OWNER
+    ).first()
     if not current_owner:
         return None
 
@@ -223,14 +299,23 @@ def transfer_ownership(db, group_id, new_owner_id, current_user):
     if not new_owner:
         return None
 
-    # we have to demote the current owner to admin and promote the new owner to owner
-    current_owner.role = GroupRole.ADMIN  
-
-    # promote the new_owner to owner
-    new_owner.role = GroupRole.OWNER  
-
+    current_owner.role = GroupRole.ADMIN
+    new_owner.role = GroupRole.OWNER
     db.commit()
-    return new_owner
+
+    new_user = db.query(User).filter(User.id == new_owner_id).first()
+    group = db.query(Group).filter(Group.id == group_id).first()
+    if new_user and group:
+        ownership_transferred_email(to=new_user.email, username=new_user.username, group_name=group.name)
+
+    return {
+        "id": new_owner.id,
+        "user_id": new_owner.user_id,
+        "username": new_user.username if new_user else "Unknown",
+        "group_id": new_owner.group_id,
+        "role": new_owner.role,
+        "joined_at": new_owner.joined_at
+    }
 
 
 # Group Goals
@@ -344,52 +429,78 @@ async def start_quiz(db: Session, goal_id: int, current_user: User):
     db.refresh(new_quiz)
     invalidate_cache(f"leaderboard:{goal.group_id}:*")
     invalidate_cache(f"dashboard:{current_user.id}:*")
-    return new_quiz
+    return {
+        "id": new_quiz.id,
+        "goal_id": new_quiz.goal_id,
+        "user_id": new_quiz.user_id,
+        "questions": strip_answers(questions),
+        "created_at": new_quiz.created_at
+    }
 
 
 async def submit_quiz(db: Session, quiz_id: int, answers: list[str], current_user: User):
-    quiz = db.query(Quiz).filter(
-        Quiz.id == quiz_id,
-        Quiz.user_id == current_user.id
-    ).first()
+    quiz = db.query(Quiz).filter(Quiz.id == quiz_id, Quiz.user_id == current_user.id).first()
     if not quiz:
-        return None
-    if quiz.graded_at is not None:
-        return None 
+        raise HTTPException(status_code=404, detail="Quiz not found")
 
-    
+    if quiz.graded_at is not None:
+        raise HTTPException(status_code=400, detail="Quiz already graded")
 
     goal = db.query(StudyGoal).filter(StudyGoal.id == quiz.goal_id).first()
     questions = json.loads(quiz.questions)
 
     result = await grade_quiz_answers(goal.topic_content, questions, answers)
 
-    max_score = result.get("max_score", 0)
-    percentage = result["total_score"] / max_score if max_score > 0 else 0
-    points_earned = max(3, int(percentage * 20))  
-
-
-
-    
-
     quiz.answers = json.dumps(answers)
-    quiz.score = result["total_score"]
-    quiz.feedback = json.dumps(result["results"])
-    quiz.graded_at = utcnow()
+    quiz.score = result.get("total_score", 0)
+    quiz.feedback = json.dumps(result.get("results", []))
+    quiz.graded_at = datetime.now(timezone.utc)
 
-    points = PointTransaction(user_id=current_user.id, group_id=goal.group_id, amount=points_earned, reason=f"Quiz score: {result['total_score']}/{max_score}")
+    # Award points
+    max_score = result.get("max_score", 10)
+    percentage = result.get("total_score", 0) / max_score if max_score > 0 else 0
+    points = max(3, int(percentage * 20))
 
-    db.add(points)
+    point = PointTransaction(
+        user_id=current_user.id,
+        group_id=goal.group_id,
+        goal_id=goal.id,
+        amount=points,
+        reason=f"Quiz score: {result.get('total_score', 0)}/{max_score}"
+    )
+    db.add(point)
 
-    passed = percentage >= 0.5
-    update_streak(db,current_user.id, goal.group_id, passed)
+    # Update streak
+    streak = db.query(Streak).filter(
+        Streak.user_id == current_user.id,
+        Streak.group_id == goal.group_id
+    ).first()
+    if streak:
+        streak.current_streak += 1
+        streak.last_active_date = date.today()
+        if streak.current_streak > streak.longest_streak:
+            streak.longest_streak = streak.current_streak
 
-    if passed:
-        completion = GoalCompletion(goal_id=goal.id, user_id=current_user.id)
+    # Check goal completion
+    if percentage >= 0.5:
+        completion = GoalCompletion(user_id=current_user.id, goal_id=goal.id, score=quiz.score)
         db.add(completion)
+
     db.commit()
     db.refresh(quiz)
-    return quiz
+
+    # Return clean dict
+    return {
+        "id": quiz.id,
+        "goal_id": quiz.goal_id,
+        "user_id": quiz.user_id,
+        "questions": json.loads(quiz.questions),
+        "answers": json.loads(quiz.answers) if quiz.answers else None,
+        "score": quiz.score,
+        "feedback": json.loads(quiz.feedback) if quiz.feedback else None,
+        "created_at": quiz.created_at,
+        "graded_at": quiz.graded_at
+    }
 
 
 def add_points(db: Session, user_id: int, group_id: int, amount: int, reason: str):
@@ -468,9 +579,8 @@ def get_group_leaderboard(db: Session, group_id: int, week_number: int = None):
                          PointTransaction.group_id == group_id]
 
         if week_number is not None:
-            points_filter.append(PointTransaction.created_at >= get_week_start(week_number))
-
-            points_filter.append(PointTransaction.created_at < get_week_start(week_number + 1))
+           points_filter.append(PointTransaction.created_at >= get_week_start(week_number))
+           points_filter.append(PointTransaction.created_at < get_week_start(week_number + 1))
 
         total_points = db.query(func.coalesce(func.sum(PointTransaction.amount), 0)).filter(*points_filter).scalar()
 
@@ -516,10 +626,13 @@ def get_group_leaderboard(db: Session, group_id: int, week_number: int = None):
     set_cache(cache_key, leaderboard, ttl_seconds=300)
     return leaderboard
 
-def get_week_start(db: Session, group_id: int, week_number: int) -> date:
-    group = db.query(Group).filter(Group.id == group_id).first()
-    semester_start = group.created_at.date()
-    return semester_start + timedelta(weeks=week_number - 1)
+def get_week_start(week_number: int):
+    """Get the Monday start date for a given ISO week number"""
+    
+    jan1 = date(date.today().year, 1, 1)
+    # Find the Monday of the given week
+    start = jan1 + timedelta(weeks=week_number - 1, days=-jan1.weekday())
+    return start
 
 
 
@@ -543,6 +656,7 @@ def upload_resource(db: Session, group_id:int, resource: ResourceCreate, current
         file_url=resource.file_url,
         file_type=resource.file_type.value
     )
+    
     db.add(db_resource)
     db.commit()
     db.refresh(db_resource)

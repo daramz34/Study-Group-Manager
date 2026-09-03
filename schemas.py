@@ -66,6 +66,7 @@ class GroupUpdate(BaseModel):
 class GroupMemberResponse(BaseModel):
     id: int
     user_id: int
+    username: str
     group_id: int
     role: GroupRole
     joined_at: datetime
@@ -130,7 +131,7 @@ class QuizResponse(BaseModel):
     id: int
     goal_id: int
     user_id: int
-    questions: str
+    questions: list[dict]
     answers: Optional[str] = None
     score: Optional[float] = None
     feedback: Optional[str] = None

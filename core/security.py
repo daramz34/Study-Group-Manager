@@ -1,6 +1,6 @@
 from passlib.context import CryptContext
 from fastapi import HTTPException, status
-import jwt
+from jose import jwt, JWTError, ExpiredSignatureError 
 from datetime import datetime, timedelta, timezone
 from core.config import settings
 
@@ -22,12 +22,12 @@ def verify_access_token(token: dict):
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         return payload
-    except jwt.ExpiredSignatureError:
+    except ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has expired"
         )
-    except jwt.InvalidTokenError:
+    except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token"

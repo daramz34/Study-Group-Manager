@@ -19,8 +19,7 @@ def parse_json_response(response_text: str):
 # generate quiz questions
 
 async def generate_quiz_questions(topic_content: str) -> list[dict]:
-    """Generate 5 quiz questions based on study topic"""
-
+    """Generate 5 quiz questions — returns FULL questions with answers (for storage)"""
     prompt = f""" You are a quiz generator for students. Based on this study material,
     generate 5 questions to test comprehension.
     
@@ -57,12 +56,23 @@ async def generate_quiz_questions(topic_content: str) -> list[dict]:
     """
 
     response = await client.aio.models.generate_content(model=MODEL, contents=prompt)
-
-    response_text = parse_json_response(response.text)
-
-    return response_text.get("questions", [])
+    response_data = parse_json_response(response.text)
+    return response_data.get("questions", [])
 
 
+def strip_answers(questions: list[dict]) -> list[dict]:
+    """Remove correct_answer from questions before sending to user"""
+    clean = []
+    for q in questions:
+        clean_q = {
+            "id": q["id"],
+            "type": q["type"],
+            "question": q["question"]
+        }
+        if "options" in q:
+            clean_q["options"] = q["options"]
+        clean.append(clean_q)
+    return clean
 
 # quiz answers
 

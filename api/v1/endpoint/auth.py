@@ -6,6 +6,7 @@ from crud import create_user, authenticate_user, get_user_by_email, get_user_by_
 from fastapi import APIRouter, HTTPException, status, Depends, Request
 from sqlalchemy.orm import Session
 from core.security import create_access_token
+from services.email import welcome_email
 from fastapi.security import OAuth2PasswordRequestForm
 
 router  = APIRouter(prefix="/auth", tags=["AUTH"])
@@ -33,7 +34,7 @@ def register(request: Request, user: UserCreate, db:Session=Depends(get_db)):
     db_user = create_user(db, user)
 
 
-    # lets try to send a welcome email here
+    welcome_email(to=user.email, username=user.username)
 
     return db_user
 

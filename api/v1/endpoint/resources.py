@@ -21,6 +21,7 @@ def upload_resource_endpoint(
     group_id: int,
     title: str = Form(...),
     description: str = Form(None),
+    file_type: FileType = Form(...),  
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -33,7 +34,7 @@ def upload_resource_endpoint(
         title=title,
         description=description,
         file_url=upload_result["url"],
-        file_type=FileType(upload_result["type"])
+        file_type=file_type
     )
 
     result = upload_resource(db, group_id, resource, current_user)

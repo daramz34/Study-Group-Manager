@@ -76,10 +76,9 @@ def join_group_endpoint(request: Request,body: JoinGroupRequest, db:Session = De
     if not db_group:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Incorrect Invite code"
+            detail="Incorrect Invite code or user already in group"
         )
     return db_group
-
 
 @router.get("/{group_id}/members", response_model=list[GroupMemberResponse], status_code=200, description="Get group Details")
 def list_members_endpoint(group_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
