@@ -1,6 +1,6 @@
 from passlib.context import CryptContext
 from fastapi import HTTPException, status
-from jose import jwt, JWTError, ExpiredSignatureError 
+from jose import jwt, JWTError, ExpiredSignatureError  # type: ignore
 from datetime import datetime, timedelta, timezone
 from core.config import settings
 
