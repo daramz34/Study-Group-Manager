@@ -44,7 +44,7 @@ async function load() {
           </article>`).join('')
       : '<p class="text-slate-500 text-sm">No goals yet. Add one below.</p>';
 
-    // 3) Render EVERYTHING in one shot — no separate element lookups
+    // 3) Render EVERYTHING in one shot
     setContent(`
       <a href="groups.html" class="text-sm text-indigo-500">← All groups</a>
       <div class="card p-6 mt-3 mb-8">
@@ -63,6 +63,9 @@ async function load() {
           <h3 class="font-bold">Quick links</h3>
           <a class="btn btn-soft w-full mt-4" href="leaderboard.html?groupId=${id}">Leaderboard</a>
           <a class="btn btn-soft w-full mt-2" href="resources.html?id=${id}">Resources</a>
+          <button class="btn btn-soft w-full mt-2" onclick="showModal('invite-modal')">
+            <i class="fa-solid fa-envelope"></i> Invite by email
+          </button>
         </aside>
       </div>`);
   } catch (e) {
@@ -98,29 +101,38 @@ async function newGoal() {
 load();
 </script>
 
-
-<!-- Invite Modal -->
+<!-- Invite modal — ONE copy -->
 <div id="invite-modal" class="hidden fixed inset-0 bg-black/70 p-5 flex items-center justify-center z-40">
   <form class="card p-7 w-full max-w-md" onsubmit="sendInvite(event)">
-    <div class="flex justify-between items-center mb-4">
+    <div class="flex justify-between items-center">
       <h2 class="text-xl font-bold">Invite by Email</h2>
       <button type="button" onclick="hideModal('invite-modal')" class="text-slate-400 hover:text-white">✕</button>
     </div>
-    <input id="invite-email" required type="email" class="field" placeholder="student@example.com">
-    <button class="btn btn-primary w-full mt-4">Send Invite</button>
+    <p class="text-sm text-slate-400 mt-1">We'll email them the invite code.</p>
+    <input id="invite-email" required type="email" class="field mt-4" placeholder="student@example.com">
+    <button id="invite-btn" class="btn btn-primary w-full mt-4">Send Invite</button>
   </form>
 </div>
 
 <script>
 async function sendInvite(e) {
   e.preventDefault();
-  const email = document.getElementById("invite-email").value;
+  const groupId = new URLSearchParams(location.search).get('id');
+  const email = document.getElementById('invite-email').value.trim();
+  const btn = document.getElementById('invite-btn');
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
   try {
-    await api.post("/groups/" + id + "/invite", { email });
-    toast("Invite sent to " + email);
-    hideModal("invite-modal");
-    document.getElementById("invite-email").value = "";
-  } catch (err) { toast(err.message, "error"); }
+    await api.post(`/groups/${groupId}/invite`, { email });
+    hideModal('invite-modal');
+    document.getElementById('invite-email').value = '';
+    toast(`Invite sent to ${email} ✉️`);
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Send Invite';
+  }
 }
 </script>
 </body>

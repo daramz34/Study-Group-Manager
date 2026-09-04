@@ -78,7 +78,7 @@ def join_group_endpoint(request: Request,body: JoinGroupRequest, db:Session = De
         )
     return db_group
 
-@router.post("/groups/{group_id}/invite", status_code=200)
+@router.post("/{group_id}/invite", status_code=200)
 @limiter.limit("10/day")
 def invite_user_endpoint(
     request: Request,
@@ -88,12 +88,13 @@ def invite_user_endpoint(
     current_user: User = Depends(get_current_user)
 ):
     result, error = send_group_invite(db, group_id, body.email, current_user)
-    
+
     if error:
         status_code = 403 if "owner/admin" in error else 404
         raise HTTPException(status_code=status_code, detail=error)
-    
+
     return result
+
 
 @router.get("/{group_id}/members", response_model=list[GroupMemberResponse], status_code=200, description="Get group Details")
 def list_members_endpoint(group_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
