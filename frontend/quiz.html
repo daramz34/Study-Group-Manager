@@ -1,0 +1,120 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Quiz · StudyTogether</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="css/custom.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
+<script>
+requireAuth();
+shell("groups");
+
+let quiz = JSON.parse(sessionStorage.getItem("sgm_quiz") || "null");
+
+if (!quiz) {
+  setContent('<div class="card p-8 text-center"><p class="text-slate-400 text-lg">No active quiz.</p><a href="groups.html" class="btn btn-primary mt-4">Go to Groups</a></div>');
+} else {
+  const questions = typeof quiz.questions === "string" ? JSON.parse(quiz.questions) : quiz.questions;
+
+  setContent(`
+    <div class="max-w-2xl mx-auto">
+      <a href="javascript:history.back()" class="text-sm text-indigo-400">← Back</a>
+      <h1 class="text-3xl font-black mt-4">Quiz</h1>
+      <p class="text-slate-400 mt-1">${questions.length} questions</p>
+      <form id="quiz-form" class="mt-8 space-y-6">
+        ${questions.map((q, i) => renderQuestion(q, i)).join("")}
+        <button type="submit" class="btn btn-primary w-full text-lg py-4">Submit Answers</button>
+      </form>
+      <div id="results" class="hidden mt-8"></div>
+    </div>
+  `);
+
+  function renderQuestion(q, i) {
+    let input = "";
+    if (q.type === "multiple_choice") {
+      input = `<div class="space-y-2 mt-3">${(q.options || []).map((opt, oi) => {
+        const letter = String.fromCharCode(65 + oi);
+        return `<label class="flex items-center gap-3 p-3 rounded-lg border border-slate-700 hover:border-indigo-500 cursor-pointer transition">
+          <input type="radio" name="q${i}" value="${letter}" class="accent-indigo-500">
+          <span>${esc(opt)}</span>
+        </label>`;
+      }).join("")}</div>`;
+    } else if (q.type === "true_false") {
+      input = `<div class="flex gap-3 mt-3">
+        <label class="flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border border-slate-700 hover:border-indigo-500 cursor-pointer transition">
+          <input type="radio" name="q${i}" value="True" class="accent-indigo-500"> True
+        </label>
+        <label class="flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border border-slate-700 hover:border-indigo-500 cursor-pointer transition">
+          <input type="radio" name="q${i}" value="False" class="accent-indigo-500"> False
+        </label>
+      </div>`;
+    } else {
+      input = `<input name="q${i}" class="field mt-3" placeholder="Type your answer…">`;
+    }
+    return `<div class="card p-5">
+      <p class="text-sm text-indigo-400 font-bold">Question ${i + 1} · ${q.type.replace("_", " ")}</p>
+      <p class="mt-2 font-semibold">${esc(q.question)}</p>
+      ${input}
+    </div>`;
+  }
+
+  document.getElementById("quiz-form").onsubmit = async (e) => {
+    e.preventDefault();
+    const form = e.target;
+    const answers = questions.map((q, i) => {
+      const radio = form.querySelector(`input[name="q${i}"]:checked`);
+      const text = form.querySelector(`input[name="q${i}"]`);
+      return radio ? radio.value : (text ? text.value.trim() : "");
+    });
+
+    const btn = form.querySelector('[type="submit"]');
+    btn.disabled = true;
+    btn.textContent = "Submitting…";
+
+    try {
+      const result = await api.post("/quiz/" + quiz.id + "/submit", { answers });
+      sessionStorage.removeItem("sgm_quiz");
+
+      const fb = typeof result.feedback === "string" ? JSON.parse(result.feedback) : (result.feedback || []);
+
+      document.getElementById("results").classList.remove("hidden");
+      document.getElementById("results").innerHTML = `
+        <div class="card p-6 text-center">
+          <div class="text-5xl">${result.score >= 8 ? "🎉" : result.score >= 5 ? "👍" : "📚"}</div>
+          <h2 class="text-3xl font-black mt-3">${result.score} / ${questions.length * 2}</h2>
+          <p class="text-slate-400 mt-2">You earned <b class="text-amber-400">${Math.max(3, Math.round(result.score / (questions.length * 2) * 20))} points</b></p>
+        </div>
+        <div class="mt-6 space-y-3">
+          ${fb.map((f, i) => `<div class="card p-4">
+            <p class="font-semibold">Q${f.question_id || i + 1}</p>
+            <p class="text-sm mt-1 ${f.score > 0 ? 'text-emerald-400' : 'text-red-400'}">Score: ${f.score || 0}/2</p>
+            <p class="text-sm text-slate-400 mt-1">${esc(f.feedback || "")}</p>
+          </div>`).join("")}
+        </div>
+        <a href="javascript:history.back()" class="btn btn-primary w-full mt-6">Back to Group</a>
+      `;
+      form.classList.add("hidden");
+    } catch (err) {
+      if (/already graded/i.test(err.message || "")) {
+        sessionStorage.removeItem("sgm_quiz");     // clear the stuck quiz
+        toast("This quiz was already graded", "error");
+        setTimeout(() => { location.href = "groups.html"; }, 1200);
+      } else {
+        toast(err.message, "error");
+        btn.disabled = false;
+        btn.textContent = "Submit Answers";
+      }
+    }
+
+  };
+}
+</script>
+</body>
+</html>

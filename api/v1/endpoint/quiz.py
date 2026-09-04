@@ -25,7 +25,7 @@ async def start_quiz_endpoint(request: Request, goal_id: int, db: Session = Depe
     if not db_quiz:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Goal not found or quiz already started today"
+            detail="Goal not found"
         )
 
     return db_quiz

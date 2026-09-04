@@ -1,0 +1,117 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Resources · StudyTogether</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="css/custom.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
+<script>
+requireAuth();
+const groupId = new URLSearchParams(location.search).get("id");
+shell("groups");
+
+if (!groupId) {
+  setContent('<div class="card p-8 text-center"><p class="text-slate-400">No group selected.</p><a href="groups.html" class="btn btn-primary mt-4">Go to Groups</a></div>');
+} else {
+  setContent(`
+    <a href="group.html?id=${groupId}" class="text-sm text-indigo-400">← Back to Group</a>
+    <div class="flex flex-wrap justify-between items-center mt-4 mb-6">
+      <h1 class="text-3xl font-black">Resources</h1>
+      <button onclick="showModal('upload-modal')" class="btn btn-primary text-sm"><i class="fa-solid fa-upload"></i> Upload</button>
+    </div>
+    <div id="list" class="grid md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+  `);
+
+  async function loadResources() {
+    try {
+      const resources = await api.get("/resources/groups/" + groupId);
+      document.querySelector("#list").innerHTML = resources.length ? resources.map(r => {
+        const icon = r.file_type === "pdf" ? "fa-file-pdf" : r.file_type === "image" ? "fa-file-image" : "fa-file";
+        return `<div class="card p-5">
+          <div class="flex items-start gap-3">
+            <i class="fa-solid ${icon} text-2xl text-indigo-400 mt-1"></i>
+            <div class="flex-1 min-w-0">
+              <h3 class="font-bold truncate">${esc(r.title)}</h3>
+              <p class="text-sm text-slate-400 mt-1 line-clamp-2">${esc(r.description || "No description")}</p>
+              <div class="flex items-center gap-3 mt-3">
+                <a href="${esc(r.file_url)}" target="_blank" class="text-sm text-indigo-400 hover:text-indigo-300"><i class="fa-solid fa-external-link"></i> Open</a>
+                <button onclick="delResource(${r.id})" class="text-sm text-red-400 hover:text-red-300"><i class="fa-solid fa-trash"></i></button>
+              </div>
+              <p class="text-xs text-slate-600 mt-2">${dateLabel(r.created_at)} · ${esc(r.file_type)}</p>
+            </div>
+          </div>
+        </div>`;
+      }).join("") : '<div class="md:col-span-2 lg:col-span-3 card p-8 text-center text-slate-500">No resources uploaded yet.</div>';
+    } catch (e) {
+      document.querySelector("#list").innerHTML = errorView(e);
+    }
+  }
+
+  async function delResource(id) {
+    if (!confirm("Delete this resource?")) return;
+    try { await api.del("/resources/" + id); toast("Deleted!"); loadResources(); }
+    catch (e) { toast(e.message, "error"); }
+  }
+
+  loadResources();
+}
+</script>
+
+<!-- Upload Modal -->
+<div id="upload-modal" class="hidden fixed inset-0 bg-black/70 p-5 flex items-center justify-center z-40">
+  <form id="upload-form" class="card p-7 w-full max-w-md">
+    <div class="flex justify-between items-center mb-4">
+      <h2 class="text-xl font-bold">Upload Resource</h2>
+      <button type="button" onclick="hideModal('upload-modal')" class="text-slate-400 hover:text-white">✕</button>
+    </div>
+    <label class="block text-sm font-medium mt-2">Title
+      <input name="title" required class="field mt-1" placeholder="Resource title">
+    </label>
+    <label class="block text-sm font-medium mt-3">Description
+      <input name="description" class="field mt-1" placeholder="Optional description">
+    </label>
+    <label class="block text-sm font-medium mt-3">Type
+      <select name="file_type" class="field mt-1" required>
+        <option value="pdf">PDF</option>
+        <option value="image">Image</option>
+        <option value="document">Document</option>
+      </select>
+    </label>
+    <label class="block text-sm font-medium mt-3">File
+      <input name="file" type="file" required class="field mt-1 file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:bg-indigo-600 file:text-white file:font-semibold file:text-sm">
+    </label>
+    <button class="btn btn-primary w-full mt-5">Upload</button>
+  </form>
+</div>
+
+<script>
+document.getElementById("upload-form")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const fd = new FormData(form);
+  const btn = form.querySelector('[type="submit"]');
+  btn.disabled = true;
+  btn.textContent = "Uploading…";
+  try {
+    await api.upload("/resources/groups/" + groupId, fd);
+    toast("Resource uploaded!");
+    hideModal("upload-modal");
+    form.reset();
+    loadResources();
+  } catch (err) {
+    toast(err.message, "error");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Upload";
+  }
+});
+</script>
+</body>
+</html>

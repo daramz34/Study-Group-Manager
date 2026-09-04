@@ -131,12 +131,12 @@ class QuizResponse(BaseModel):
     id: int
     goal_id: int
     user_id: int
-    questions: list[dict]
-    answers: Optional[str] = None
-    score: Optional[float] = None
-    feedback: Optional[str] = None
+    questions: list | None = None
+    answers: list | None = None
+    score: int | None = None
+    feedback: list | None = None
     created_at: datetime
-    graded_at: Optional[datetime] = None
+    graded_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -144,6 +144,8 @@ class SubmitAnswers(BaseModel):
     answers: list[str]
 
 
+class InviteUserRequest(BaseModel):
+    email: EmailStr
 
 # streaks
 class StreakResponse(BaseModel):

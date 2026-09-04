@@ -39,6 +39,19 @@ def register(request: Request, user: UserCreate, db:Session=Depends(get_db)):
     return db_user
 
 
+from fastapi import Body
+
+@router.post("/reset-password")
+def reset_password(email: str = Body(...), new_password: str = Body(...), db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    from core.auth import hashed_password
+    user.hashed_password = hashed_password(new_password)
+    db.commit()
+    return {"message": "Password updated"}
+
+
 @router.post("/login", response_model=TokenResponse, description="User Login")
 @limiter.limit("10/hour")
 async def login(request: Request, form: OAuth2PasswordRequestForm = Depends(), db: Session=Depends(get_db)):

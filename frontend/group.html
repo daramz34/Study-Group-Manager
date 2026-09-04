@@ -1,0 +1,127 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Group · StudyTogether</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="css/custom.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
+<script>
+requireAuth();
+const id = new URLSearchParams(location.search).get('id');
+shell('groups');
+
+async function load() {
+  try {
+    // 1) Fetch groups list, find ours
+    const groups = await apiCall('/groups/');
+    const g = groups.find(x => String(x.id) === String(id));
+    if (!g) throw new Error('Group not found — are you a member?');
+
+    // 2) Fetch goals (try common paths until one returns an array)
+    let goals = [];
+    for (const p of [`/goals/group/${id}`, `/groups/${id}/goals`, `/goals/?group_id=${id}`]) {
+      try { const r = await apiCall(p); if (Array.isArray(r)) { goals = r; break; } } catch (_) {}
+    }
+
+    const goalCards = goals.length
+      ? goals.map(x => `
+          <article class="card p-5 mb-3">
+            <div class="flex justify-between gap-3">
+              <div>
+                <h3 class="font-bold">${esc(x.title)}</h3>
+                <p class="text-sm text-slate-500 mt-1">${esc(x.description || x.topic_content || '')}</p>
+              </div>
+              <span class="text-xs text-slate-500 whitespace-nowrap">${dateLabel(x.deadline)}</span>
+            </div>
+            <button class="btn btn-primary text-sm mt-4" onclick="startQuiz(${x.id})">Take quiz</button>
+          </article>`).join('')
+      : '<p class="text-slate-500 text-sm">No goals yet. Add one below.</p>';
+
+    // 3) Render EVERYTHING in one shot — no separate element lookups
+    setContent(`
+      <a href="groups.html" class="text-sm text-indigo-500">← All groups</a>
+      <div class="card p-6 mt-3 mb-8">
+        <span class="text-xs font-bold uppercase tracking-wide text-indigo-400">${esc(g.subject || '')}</span>
+        <h1 class="text-3xl font-black mt-1">${esc(g.name)}</h1>
+        <p class="text-slate-500 mt-1">${esc(g.description || '')}</p>
+        <p class="text-xs text-slate-400 mt-3">Invite code: <b class="text-slate-200">${esc(g.invite_code)}</b></p>
+      </div>
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xl font-bold">Study goals</h2>
+        <button class="btn btn-soft text-sm" onclick="newGoal()">+ Add goal</button>
+      </div>
+      <div class="grid lg:grid-cols-3 gap-6">
+        <section class="lg:col-span-2 space-y-4">${goalCards}</section>
+        <aside class="card p-6 h-fit">
+          <h3 class="font-bold">Quick links</h3>
+          <a class="btn btn-soft w-full mt-4" href="leaderboard.html?groupId=${id}">Leaderboard</a>
+          <a class="btn btn-soft w-full mt-2" href="resources.html?id=${id}">Resources</a>
+        </aside>
+      </div>`);
+  } catch (e) {
+    document.querySelector('#content').innerHTML =
+      `<div class="card p-6 text-red-600">Unable to load: ${esc(e.message)}</div>`;
+  }
+}
+
+async function startQuiz(goalId) {
+  try {
+    const q = await apiCall(`/quiz/goals/${goalId}/start-quiz`, { method: 'POST' });
+    sessionStorage.setItem('sgm_quiz', JSON.stringify(q));
+    location.href = 'quiz.html';
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function newGoal() {
+  const title = prompt('Goal title');
+  if (!title) return;
+  const topic = prompt('Topic/content to study');
+  if (!topic) return;
+  const deadline = prompt('Deadline (YYYY-MM-DD)', new Date().toISOString().slice(0, 10));
+  try {
+    await apiCall(`/goals/group/${id}`, {
+      method: 'POST',
+      body: JSON.stringify({ title, topic_content: topic, description: null, week_number: 1, deadline })
+    });
+    toast('Goal created');
+    load();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+load();
+</script>
+
+
+<!-- Invite Modal -->
+<div id="invite-modal" class="hidden fixed inset-0 bg-black/70 p-5 flex items-center justify-center z-40">
+  <form class="card p-7 w-full max-w-md" onsubmit="sendInvite(event)">
+    <div class="flex justify-between items-center mb-4">
+      <h2 class="text-xl font-bold">Invite by Email</h2>
+      <button type="button" onclick="hideModal('invite-modal')" class="text-slate-400 hover:text-white">✕</button>
+    </div>
+    <input id="invite-email" required type="email" class="field" placeholder="student@example.com">
+    <button class="btn btn-primary w-full mt-4">Send Invite</button>
+  </form>
+</div>
+
+<script>
+async function sendInvite(e) {
+  e.preventDefault();
+  const email = document.getElementById("invite-email").value;
+  try {
+    await api.post("/groups/" + id + "/invite", { email });
+    toast("Invite sent to " + email);
+    hideModal("invite-modal");
+    document.getElementById("invite-email").value = "";
+  } catch (err) { toast(err.message, "error"); }
+}
+</script>
+</body>
+</html>

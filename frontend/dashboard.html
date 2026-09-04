@@ -1,0 +1,65 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard · StudyTogether</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="css/custom.css">
+</head>
+<body class="bg-slate-950 text-slate-100">
+  <div id="app"></div>
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/dashboard.js"></script>
+  <script>
+    requireAuth();
+    shell();
+    setContent(`
+      <div class="flex items-center justify-between mb-8">
+        <div>
+          <p class="text-indigo-400 font-semibold">Your learning hub</p>
+          <h1 class="text-3xl font-black">Dashboard</h1>
+        </div>
+        <a href="groups.html" class="btn btn-primary">Explore groups</a>
+      </div>
+      <div id="stats" class="grid sm:grid-cols-3 gap-4 mb-8"></div>
+      <section class="grid lg:grid-cols-2 gap-6">
+        <div class="card p-6">
+          <h2 class="font-bold text-lg mb-4">Your groups</h2>
+          <div id="groups"></div>
+        </div>
+        <div class="card p-6">
+          <h2 class="font-bold text-lg mb-4">Quick actions</h2>
+          <div class="space-y-3">
+            <a href="groups.html" class="block btn btn-soft w-full text-center">View all groups</a>
+            <a href="leaderboard.html" class="block btn btn-soft w-full text-center">Leaderboard</a>
+            <a href="resources.html" class="block btn btn-soft w-full text-center">Resources</a>
+          </div>
+        </div>
+      </section>
+    `);
+    (async () => {
+      try {
+        const me = await api.get("/users/me");
+        document.querySelector("#user-name").textContent = me.full_name || me.username || "Learner";
+      } catch {}
+      try {
+        const dash = await api.get("/dashboard/users/me");
+        document.querySelector("#stats").innerHTML = [
+          ["Groups", dash.groups?.length || 0, "text-indigo-400"],
+          ["Total points", dash.total_points || 0, "text-emerald-400"],
+          ["Current streak", (dash.current_streak || 0) + " days", "text-amber-400"]
+        ].map(x => `<div class="card p-5"><p class="text-sm text-slate-400">${x[0]}</p><p class="text-2xl font-black ${x[2]}">${x[1]}</p></div>`).join("");
+        document.querySelector("#groups").innerHTML = (dash.groups || []).slice(0, 5).map(g =>
+          `<a href="group.html?id=${g.id}" class="block border-b border-slate-700 py-3 hover:text-indigo-400">${esc(g.name)}</a>`
+        ).join("") || '<p class="text-slate-500 text-sm">No groups yet.</p>';
+      } catch (e) {
+        document.querySelector("#stats").innerHTML = '<p class="text-slate-500">Could not load stats.</p>';
+      }
+    })();
+  </script>
+</body>
+</html>

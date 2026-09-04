@@ -135,6 +135,33 @@ def join_group(db: Session, invite_code: str, current_user: User):
         "joined_at": db_member.joined_at
     }
 
+def send_group_invite(db: Session, group_id: int, email: str, current_user: User):
+    """Send invite code to a user's email"""
+    from services.email import group_invite_email
+    
+    # Only owner/admin can invite
+    member = db.query(GroupMember).filter(
+        GroupMember.group_id == group_id,
+        GroupMember.user_id == current_user.id,
+        GroupMember.role.in_([GroupRole.OWNER, GroupRole.ADMIN])
+    ).first()
+    if not member:
+        return None, "Only owner/admin can invite"
+
+    group = db.query(Group).filter(Group.id == group_id).first()
+    if not group:
+        return None, "Group not found"
+
+    # Send the invite email
+    group_invite_email(
+        to=email,
+        sender_username=current_user.username,
+        group_name=group.name,
+        invite_code=group.invite_code
+    )
+
+    return {"message": f"Invite sent to {email}"}, None
+
 
 def leave_group(db: Session, group_id: int, current_user: User):
     member = db.query(GroupMember).filter(
@@ -416,7 +443,7 @@ async def start_quiz(db: Session, goal_id: int, current_user: User):
         Quiz.created_at >= date.today()
     ).first()
     if existing_quiz:
-        return None  # User has already started the quiz
+        raise HTTPException(status_code=400, detail="Quiz already taken")  # User has already started the quiz
 
     questions = await generate_quiz_questions(goal.topic_content)
 
@@ -433,9 +460,16 @@ async def start_quiz(db: Session, goal_id: int, current_user: User):
         "id": new_quiz.id,
         "goal_id": new_quiz.goal_id,
         "user_id": new_quiz.user_id,
-        "questions": strip_answers(questions),
-        "created_at": new_quiz.created_at
+        "questions": json.loads(new_quiz.questions) if new_quiz.questions else None,
+        "answers": json.loads(new_quiz.answers) if new_quiz.answers else None,
+        "score": new_quiz.score,
+        "feedback": json.loads(new_quiz.feedback) if new_quiz.feedback else None,
+        "created_at": new_quiz.created_at,
+        "graded_at": new_quiz.graded_at,
     }
+
+
+
 
 
 async def submit_quiz(db: Session, quiz_id: int, answers: list[str], current_user: User):
@@ -451,26 +485,25 @@ async def submit_quiz(db: Session, quiz_id: int, answers: list[str], current_use
 
     result = await grade_quiz_answers(goal.topic_content, questions, answers)
 
+    # ── Save grading (ONE block, JSON strings — matches the schema) ──
     quiz.answers = json.dumps(answers)
-    quiz.score = result.get("total_score", 0)
     quiz.feedback = json.dumps(result.get("results", []))
+    quiz.score = result.get("total_score", 0)
     quiz.graded_at = datetime.now(timezone.utc)
 
-    # Award points
-    max_score = result.get("max_score", 10)
-    percentage = result.get("total_score", 0) / max_score if max_score > 0 else 0
+    # ── Award points ──
+    max_score = result.get("max_score", 10) or 10
+    percentage = result.get("total_score", 0) / max_score
     points = max(3, int(percentage * 20))
 
-    point = PointTransaction(
+    db.add(PointTransaction(
         user_id=current_user.id,
         group_id=goal.group_id,
-        goal_id=goal.id,
         amount=points,
         reason=f"Quiz score: {result.get('total_score', 0)}/{max_score}"
-    )
-    db.add(point)
+    ))
 
-    # Update streak
+    # ── Update streak ──
     streak = db.query(Streak).filter(
         Streak.user_id == current_user.id,
         Streak.group_id == goal.group_id
@@ -481,27 +514,25 @@ async def submit_quiz(db: Session, quiz_id: int, answers: list[str], current_use
         if streak.current_streak > streak.longest_streak:
             streak.longest_streak = streak.current_streak
 
-    # Check goal completion
+    # ── Goal completion ──
     if percentage >= 0.5:
-        completion = GoalCompletion(user_id=current_user.id, goal_id=goal.id, score=quiz.score)
-        db.add(completion)
+        db.add(GoalCompletion(user_id=current_user.id, goal_id=goal.id))
 
     db.commit()
     db.refresh(quiz)
 
-    # Return clean dict
     return {
         "id": quiz.id,
         "goal_id": quiz.goal_id,
         "user_id": quiz.user_id,
-        "questions": json.loads(quiz.questions),
+        "questions": json.loads(quiz.questions) if quiz.questions else None,
         "answers": json.loads(quiz.answers) if quiz.answers else None,
         "score": quiz.score,
         "feedback": json.loads(quiz.feedback) if quiz.feedback else None,
         "created_at": quiz.created_at,
-        "graded_at": quiz.graded_at
+        "graded_at": quiz.graded_at,
     }
-
+  # ← ORM object: answers/feedback/questions serialize as JSON strings
 
 def add_points(db: Session, user_id: int, group_id: int, amount: int, reason: str):
     points = PointTransaction(user_id=user_id, group_id=group_id, amount=amount, reason=reason)

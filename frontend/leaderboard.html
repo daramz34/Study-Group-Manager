@@ -1,0 +1,94 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Leaderboard · StudyTogether</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="css/custom.css">
+</head>
+<body>
+<div id="app"></div>
+<script src="js/api.js"></script>
+<script src="js/app.js"></script>
+<script>
+requireAuth();
+const groupId = new URLSearchParams(location.search).get("groupId");
+shell("leaderboard");
+
+setContent(`
+  <a href="${groupId ? 'group.html?id=' + groupId : 'groups.html'}" class="text-sm text-indigo-400 hover:text-indigo-300">← Back</a>
+  <h1 class="text-4xl font-black mt-4">Leaderboard</h1>
+  <p class="text-slate-400 mt-1">A little friendly competition goes a long way.</p>
+  <div class="flex gap-2 mt-6">
+    <button id="btn-all" class="btn btn-primary text-sm" onclick="loadBoard(0)">All Time</button>
+    <button id="btn-week" class="btn btn-soft text-sm" onclick="loadBoard(1)">This Week</button>
+  </div>
+  <div id="podium" class="grid grid-cols-3 gap-3 items-end mt-10 text-center max-w-xl mx-auto"></div>
+  <div class="card mt-8 overflow-x-auto">
+    <table class="w-full text-left">
+      <thead class="text-slate-400 text-sm border-b border-slate-700">
+        <tr><th class="py-3 px-4">#</th><th class="px-4">Student</th><th class="px-4 text-right">Points</th><th class="px-4 text-right">Streak</th><th class="px-4 text-right">Quizzes</th></tr>
+      </thead>
+      <tbody id="board"></tbody>
+    </table>
+  </div>
+`);
+
+let allData = [];
+
+async function loadBoard(week) {
+  try {
+    const url = groupId ? `/leaderboard/${groupId}` : "/leaderboard/1";
+    allData = await api.get(url + (week ? `?week=${week}` : ""));
+    render();
+    document.getElementById("btn-all").className = `btn text-sm ${week ? "btn-soft" : "btn-primary"}`;
+    document.getElementById("btn-week").className = `btn text-sm ${week ? "btn-primary" : "btn-soft"}`;
+  } catch (e) {
+    document.querySelector("#content").innerHTML += errorView(e);
+  }
+}
+
+function render() {
+  const entries = allData.entries || [];
+  const podium = document.getElementById("podium");
+  const board = document.getElementById("board");
+
+  if (entries.length === 0) {
+    podium.innerHTML = '<div class="col-span-3 text-slate-500 py-10">No data yet.</div>';
+    board.innerHTML = '<tr><td colspan="5" class="text-slate-500 py-6 text-center">No entries.</td></tr>';
+    return;
+  }
+
+  // Podium: positions [1, 0, 2] = silver, gold, bronze
+  const order = [1, 0, 2];
+  const medals = ["🥈", "🏆", "🥉"];
+  const heights = ["pb-4", "pb-0", "pb-6"];
+  const sizes = ["", "text-xl", ""];
+
+  podium.innerHTML = order.map((i, pos) => {
+    const e = entries[i];
+    if (!e) return '<div></div>';
+    return `<div class="card p-4 ${heights[pos]} ${pos === 1 ? 'border-amber-500' : ''}">
+      <div class="text-3xl">${medals[pos]}</div>
+      <b class="block mt-2">${esc(e.username)}</b>
+      <p class="text-indigo-400 font-bold mt-1">${e.total_points} pts</p>
+    </div>`;
+  }).join("");
+
+  board.innerHTML = entries.map((e, i) => `
+    <tr class="border-t border-slate-700 hover:bg-slate-800/50">
+      <td class="py-3 px-4 font-bold">${e.rank || i + 1}</td>
+      <td class="px-4 font-semibold">${esc(e.username)}</td>
+      <td class="px-4 text-right text-amber-400 font-bold">${e.total_points}</td>
+      <td class="px-4 text-right text-orange-400">${e.current_streak}🔥</td>
+      <td class="px-4 text-right text-emerald-400">${e.quizzes_completed}</td>
+    </tr>
+  `).join("");
+}
+
+loadBoard(0);
+</script>
+</body>
+</html>

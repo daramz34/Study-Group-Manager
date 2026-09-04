@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>StudyTogether · Authentication</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="css/custom.css">
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100">
+  <main class="min-h-screen grid lg:grid-cols-2">
+    <section class="hidden lg:flex flex-col justify-center p-16 bg-gradient-to-br from-indigo-600 to-purple-700">
+      <p class="text-4xl font-extrabold">Study<span class="text-emerald-300">Together</span></p>
+      <h1 class="mt-8 text-5xl font-extrabold leading-tight">Learn together.<br>Rank together.</h1>
+      <p class="mt-6 max-w-md text-indigo-100 text-lg">AI-powered quizzes, real-time leaderboards, and collaborative study groups.</p>
+    </section>
+    <section class="flex items-center justify-center p-5 sm:p-10">
+      <div class="w-full max-w-md">
+        <a href="index.html" class="text-2xl font-extrabold lg:hidden">Study<span class="text-emerald-400">Together</span></a>
+        <div class="mt-8 rounded-2xl border border-slate-700 bg-slate-800/70 p-6 sm:p-8 shadow-2xl">
+          <h2 id="modeTitle" class="text-2xl font-bold">Welcome back</h2>
+          <p class="mt-2 text-slate-400">Sign in to continue your learning journey.</p>
+          <form id="authForm" class="mt-7 space-y-4">
+            <!-- Username: visible on login -->
+            <label id="usernameField" class="block text-sm font-medium">Username
+              <input name="username" class="field mt-1" required autocomplete="username">
+            </label>
+            <!-- Email: hidden on login, shown on register -->
+            <label id="emailField" class="hidden block text-sm font-medium">Email
+              <input name="email" type="email" class="field mt-1" autocomplete="email">
+            </label>
+            <label class="block text-sm font-medium">Password
+              <span class="relative block">
+                <input id="password" name="password" type="password" class="field mt-1 pr-12" required autocomplete="current-password">
+                <button type="button" id="togglePassword" class="absolute right-3 top-3 text-slate-400" aria-label="Show password">
+                  <i class="fa-solid fa-eye"></i>
+                </button>
+              </span>
+            </label>
+            <label id="confirmField" class="hidden block text-sm font-medium">Confirm password
+              <input id="confirmPassword" name="confirm_password" type="password" class="field mt-1" autocomplete="new-password">
+            </label>
+            <button type="submit" id="formBtn" class="btn btn-primary w-full">Sign in</button>
+            <p id="authMessage" class="min-h-5 text-sm text-red-400" role="alert"></p>
+          </form>
+          <button id="toggleMode" type="button" class="mt-5 w-full text-sm font-semibold text-indigo-300 hover:text-indigo-200">New here? Create an account</button>
+        </div>
+      </div>
+    </section>
+    
+  </main>
+  <script src="js/api.js"></script>
+  <script src="js/auth.js"></script>
+</body>
+</html>

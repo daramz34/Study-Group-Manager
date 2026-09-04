@@ -1,0 +1,131 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Quiz · StudyTogether</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="css/custom.css">
+</head>
+<body>
+  <div id="app"></div>
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
+  <script>
+    requireAuth();
+    shell();
+    const q = JSON.parse(sessionStorage.getItem("sgm_quiz") || "null");
+    if (!q) { location.href = "groups.html"; }
+    else {
+      const questions = q.questions || [];
+
+      function optionLetter(i) { return String.fromCharCode(65 + i); } // 0 -> A
+
+      function fieldFor(x, i) {
+        const name = "q" + i;
+        if (x.type === "multiple_choice") {
+          return `<div class="space-y-2 mt-3">${(x.options || []).map((opt, oi) => `
+            <label class="flex items-center gap-3 border border-slate-700 rounded-lg px-4 py-2 cursor-pointer hover:border-indigo-500">
+              <input type="radio" name="${name}" value="${optionLetter(oi)}" class="accent-indigo-500">
+              <span>${esc(opt)}</span>
+            </label>`).join("")}
+          </div>`;
+        }
+        if (x.type === "true_false") {
+          return `<div class="flex gap-3 mt-3">
+            ${["True", "False"].map(v => `
+            <label class="flex items-center gap-2 border border-slate-700 rounded-lg px-4 py-2 cursor-pointer hover:border-indigo-500">
+              <input type="radio" name="${name}" value="${v}" class="accent-indigo-500"> ${v}
+            </label>`).join("")}
+          </div>`;
+        }
+        return `<textarea name="${name}" rows="2" required placeholder="Type your answer…" class="field mt-3"></textarea>`;
+      }
+
+      function collectAnswers() {
+        return questions.map((x, i) => {
+          const name = "q" + i;
+          const checked = document.querySelector(`input[name="${name}"]:checked`);
+          if (checked) return checked.value;
+          return (document.querySelector(`[name="${name}"]`) || {}).value || "";
+        });
+      }
+
+      setContent(`
+        <div class="max-w-3xl mx-auto">
+          <a href="groups.html" class="text-sm text-indigo-500">← Back to groups</a>
+          <h1 class="text-3xl font-black mt-4">Knowledge check</h1>
+          <p class="text-slate-500 mb-6">Answer each question, then submit for instant feedback.</p>
+          <form id="quizform" class="space-y-4">
+            ${questions.map((x, i) => `
+              <div class="card block p-5">
+                <span class="font-semibold">${i + 1}. ${esc(x.question || x.text)}</span>
+                <span class="text-xs uppercase tracking-wide text-slate-500 ml-2">${esc(x.type || "")}</span>
+                ${fieldFor(x, i)}
+              </div>`).join("")}
+            <button class="btn btn-primary" id="submitBtn">Submit answers</button>
+          </form>
+          <div id="result"></div>
+        </div>`);
+
+      quizform.onsubmit = async e => {
+        e.preventDefault();
+        const answers = collectAnswers();
+        const btn = document.getElementById("submitBtn");
+        btn.disabled = true; btn.textContent = "Grading…";
+        try {
+          const r = await api.post("/quiz/" + q.id + "/submit", { answers });
+          sessionStorage.removeItem("sgm_quiz");
+
+          // Map per-question feedback by question id
+          const fbMap = {};
+          (r.feedback || []).forEach(f => { fbMap[f.question_id] = f; });
+
+          const review = (r.questions || []).map((x, i) => {
+            const fb = fbMap[x.id];
+            const yours = r.answers ? r.answers[i] : "";
+            const right = fb && fb.score > 0;
+            const displayCorrect = x.type === "multiple_choice"
+              ? (x.correct_answer + ". " + (x.options[optionLetter.indexOf ? 0 : 0] || ""))
+              : x.correct_answer;
+            // show correct option text for MC when we can
+            const correctText = x.type === "multiple_choice" && /^[A-D]$/.test(String(x.correct_answer))
+              ? String(x.correct_answer) + ". " + (x.options[String(x.correct_answer).charCodeAt(0) - 65] || "")
+              : x.correct_answer;
+            return `
+              <div class="card p-5 mb-4 ${right ? "border-emerald-600" : "border-rose-600"}">
+                <div class="flex justify-between gap-3">
+                  <span class="font-semibold">${i + 1}. ${esc(x.question)}</span>
+                  <span class="text-xs font-bold whitespace-nowrap ${right ? "text-emerald-400" : "text-rose-400"}">${right ? "✓ Correct" : "✗ Incorrect"}</span>
+                </div>
+                <div class="text-sm mt-3 space-y-1">
+                  <p><span class="text-slate-500">Your answer:</span> <b>${esc(yours)}</b></p>
+                  <p><span class="text-slate-500">Correct answer:</span> <b class="${right ? "text-emerald-400" : "text-rose-400"}">${esc(correctText)}</b></p>
+                  ${fb && fb.feedback ? `<p class="text-slate-400 mt-2 italic">${esc(fb.feedback)}</p>` : ""}
+                </div>
+              </div>`;
+          }).join("");
+
+          result.innerHTML = `
+            <div class="card p-6 mt-6 border-indigo-500">
+              <h2 class="text-2xl font-black">Quiz complete 🎉</h2>
+              <p class="mt-1">You scored <b class="text-amber-400 text-xl">${r.score ?? 0}</b> points.</p>
+              <div class="mt-5">${review}</div>
+              <a href="groups.html" class="btn btn-primary mt-4">Back to groups</a>
+            </div>`;
+          quizform.querySelector("button").style.display = "none";
+        } catch (x) {
+          btn.disabled = false; btn.textContent = "Submit answers";
+          if (/already graded/i.test(x.message || "")) {
+            sessionStorage.removeItem("sgm_quiz");
+            toast(x.message, true);
+            setTimeout(() => { location.href = "groups.html"; }, 1200);
+          } else {
+            toast(x.message, true);
+          }
+        }
+      };
+    }
+  </script>
+</body>
+</html>

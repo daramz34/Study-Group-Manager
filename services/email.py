@@ -237,3 +237,30 @@ def member_left_group_email(to: str, username: str, group_name: str, left_userna
     """
     send_email(to, f"👋 {left_username} left '{group_name}'", html)
 
+
+
+def group_invite_email(to: str, sender_username: str, group_name: str, invite_code: str):
+    """Send invite code to a user's email"""
+    html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h2 style="color: #4CAF50;">📚 You're Invited!</h2>
+        <p>Hey!</p>
+        <p><strong>{sender_username}</strong> invited you to join <strong>"{group_name}"</strong> on StudyGroup.</p>
+        
+        <div style="background: #f5f5f5; padding: 20px; border-radius: 8px; text-align: center; margin: 20px 0;">
+            <p style="margin: 0; color: #666;">Your invite code:</p>
+            <h1 style="margin: 10px 0; color: #333; letter-spacing: 5px; font-size: 32px;">{invite_code}</h1>
+        </div>
+        
+        <p>Use this code to join the group:</p>
+        <p style="text-align: center;">
+            <code style="background: #e8f5e9; padding: 8px 16px; border-radius: 4px;">
+                POST /api/v1/groups/jointype="{invite_code}"
+            </code>
+        </p>
+        
+        <br>
+        <p style="color: #666;">— The StudyGroup Team</p>
+    </div>
+    """
+    send_email(to, f"📚 You're invited to '{group_name}'!", html)
