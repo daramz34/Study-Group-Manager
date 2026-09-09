@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from core.security import create_access_token
 from services.email import welcome_email
 from fastapi.security import OAuth2PasswordRequestForm
+from models import User
+import core
 
 router  = APIRouter(prefix="/auth", tags=["AUTH"])
 limiter = Limiter(key_func=get_remote_address)
@@ -46,7 +48,7 @@ def reset_password(email: str = Body(...), new_password: str = Body(...), db: Se
     user = db.query(User).filter(User.email == email).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    from core.auth import hashed_password
+    from core.security import hashed_password
     user.hashed_password = hashed_password(new_password)
     db.commit()
     return {"message": "Password updated"}
